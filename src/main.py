@@ -12,6 +12,7 @@ from src.llm.provider import LLMProvider
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
+from src.memory.contacts import Contacts
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.worker import Worker
@@ -47,8 +48,14 @@ async def main() -> None:
     diary = Diary()
     vector_store = VectorStore()
     working_memory = WorkingMemory()
+    contacts = Contacts()
     personality = Personality()
     notification_manager = NotificationManager()
+
+    # Добавляем owner'а в контакты
+    owner_id = os.getenv("OWNER_CHAT_ID")
+    if owner_id:
+        contacts.update(int(owner_id), name=personality.name + "'s owner", tags=["owner"])
 
     worker = Worker(
         name="main",
@@ -57,6 +64,7 @@ async def main() -> None:
         diary=diary,
         vector_store=vector_store,
         working_memory=working_memory,
+        contacts=contacts,
         personality=personality,
         notification_manager=notification_manager,
     )

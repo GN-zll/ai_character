@@ -11,6 +11,7 @@ from src.llm.provider import LLMProvider, ChatMessage, ToolCall
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
+from src.memory.contacts import Contacts
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.tools import build_tools, execute_tool, ToolContext
@@ -36,6 +37,7 @@ class Worker:
         diary: Diary,
         vector_store: VectorStore,
         working_memory: WorkingMemory,
+        contacts: Contacts,
         personality: Personality,
         notification_manager: NotificationManager,
     ) -> None:
@@ -45,6 +47,7 @@ class Worker:
         self._diary = diary
         self._vector_store = vector_store
         self._working_memory = working_memory
+        self._contacts = contacts
         self._personality = personality
         self._notification_manager = notification_manager
 
@@ -98,6 +101,7 @@ class Worker:
         system_prompt = self._personality.get_system_prompt(
             working_memory=self._working_memory.get(),
             diary_entries=diary_context,
+            contacts=self._contacts.format_for_prompt(),
         )
 
         # Tool'ы для LLM
@@ -106,6 +110,7 @@ class Worker:
             client=self._client,
             diary=self._diary,
             vector_store=self._vector_store,
+            contacts=self._contacts,
             notification_manager=self._notification_manager,
             llm=self._llm,
             temporary_context=self._temporary_context,

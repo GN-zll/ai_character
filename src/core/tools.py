@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from src.client.base import BaseTelegramClient
     from src.memory.diary import Diary
     from src.memory.rag import VectorStore
+    from src.memory.contacts import Contacts
     from src.core.notification import NotificationManager
     from src.llm.provider import ChatMessage
 
@@ -23,7 +24,8 @@ class ToolContext:
     client: BaseTelegramClient
     diary: Diary
     vector_store: VectorStore
-    notification_manager: NotificationManager
+    contacts: object = None  # Contacts
+    notification_manager: NotificationManager = None
     llm: object = None  # LLMProvider (avoid circular import)
     temporary_context: list = field(default_factory=list)
 
@@ -87,6 +89,46 @@ def build_tools() -> list[Tool]:
             description="Pause and wait for the next event. Same as wait.",
             parameters={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="contacts_get",
+            description="Get info about a contact by chat_id, or list all contacts if no chat_id given.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "integer",
+                        "description": "Chat ID to look up. Omit to list all contacts.",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="contacts_update",
+            description="Create or update a contact in your address book. Set a name, description, or tags for a chat_id.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "integer",
+                        "description": "The chat ID",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Contact's name/nickname",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of who this person is",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags like 'friend', 'family', 'work'",
+                    },
+                },
+                "required": ["chat_id"],
+            },
+        ),
     ]
 
 
@@ -106,6 +148,10 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return await _tool_ask(args, ctx)
         elif name in ("wait", "pause"):
             return "Waiting for next notification."
+        elif name == "contacts_get":
+            return _tool_contacts_get(args, ctx)
+        elif name == "contacts_update":
+            return _tool_contacts_update(args, ctx)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -158,3 +204,43 @@ async def _tool_ask(args: dict, ctx: ToolContext) -> str:
         return "Found memories:\n" + "\n---\n".join(entries)
     except Exception as e:
         return f"Search failed: {e}"
+
+
+def _tool_contacts_get(args: dict, ctx: ToolContext) -> str:
+    if not ctx.contacts:
+        return "Contacts not available."
+
+    chat_id = args.get("chat_id")
+    if chat_id is not None:
+        contact = ctx.contacts.get(chat_id)
+        if not contact:
+            return f"No contact found for chat_id={chat_id}."
+        return f"Contact: id={contact.chat_id}, name={contact.name}, description={contact.description}, tags={contact.tags}"
+
+    # List all
+    contacts = ctx.contacts.list_all()
+    if not contacts:
+        return "Address book is empty."
+
+    lines = []
+    for c in contacts:
+        line = f"- {c.chat_id}: {c.name}"
+        if c.description:
+            line += f" — {c.description}"
+        if c.tags:
+            line += f" [{', '.join(c.tags)}]"
+        lines.append(line)
+    return "Contacts:\n" + "\n".join(lines)
+
+
+def _tool_contacts_update(args: dict, ctx: ToolContext) -> str:
+    if not ctx.contacts:
+        return "Contacts not available."
+
+    chat_id = args["chat_id"]
+    name = args.get("name")
+    description = args.get("description")
+    tags = args.get("tags")
+
+    contact = ctx.contacts.update(chat_id, name=name, description=description, tags=tags)
+    return f"Contact updated: {contact.chat_id} = {contact.name}"
