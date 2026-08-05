@@ -144,21 +144,29 @@ class LLMProvider:
 
     # ── Embeddings ─────────────────────────────────────────────
 
-    async def embed(self, text: str) -> list[float]:
-        """Получить эмбеддинг для текста."""
-        response = await self._client.embeddings.create(
-            model=self._embedding_model,
-            input=text,
-        )
-        return response.data[0].embedding
+    async def embed(self, text: str) -> list[float] | None:
+        """Получить эмбеддинг для текста. Возвращает None если не поддерживается."""
+        try:
+            response = await self._client.embeddings.create(
+                model=self._embedding_model,
+                input=text,
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.warning("Embeddings not available: %s", e)
+            return None
 
-    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Получить эмбеддинги для списка текстов."""
-        response = await self._client.embeddings.create(
-            model=self._embedding_model,
-            input=texts,
-        )
-        return [item.embedding for item in response.data]
+    async def embed_batch(self, texts: list[str]) -> list[list[float]] | None:
+        """Получить эмбеддинги для списка текстов. Возвращает None если не поддерживается."""
+        try:
+            response = await self._client.embeddings.create(
+                model=self._embedding_model,
+                input=texts,
+            )
+            return [item.embedding for item in response.data]
+        except Exception as e:
+            logger.warning("Embeddings not available: %s", e)
+            return None
 
     # ── Formatting helpers ─────────────────────────────────────
 

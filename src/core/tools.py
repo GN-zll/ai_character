@@ -174,11 +174,12 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
     if ctx.llm:
         try:
             embedding = await ctx.llm.embed(entry_text)
-            ctx.vector_store.add(
-                text=entry_text,
-                embedding=embedding,
-                metadata={"entry_id": entry.id, "source": "diary"},
-            )
+            if embedding is not None:
+                ctx.vector_store.add(
+                    text=entry_text,
+                    embedding=embedding,
+                    metadata={"entry_id": entry.id, "source": "diary"},
+                )
         except Exception:
             logger.exception("Failed to embed diary entry")
 
@@ -193,6 +194,8 @@ async def _tool_ask(args: dict, ctx: ToolContext) -> str:
 
     try:
         embedding = await ctx.llm.embed(query)
+        if embedding is None:
+            return "Search unavailable (embeddings not supported by this provider)."
         results = ctx.vector_store.query(embedding, n_results=5, max_distance=0.5)
 
         if not results:

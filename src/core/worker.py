@@ -183,6 +183,8 @@ class Worker:
         query_text = "\n".join(recent)
         try:
             embedding = await self._llm.embed(query_text)
+            if embedding is None:
+                return ""
             results = self._vector_store.query(embedding, n_results=5, max_distance=0.5)
 
             if not results:
