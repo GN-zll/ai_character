@@ -33,14 +33,30 @@ class BotClient(BaseTelegramClient):
         logger.info("Bot disconnected")
 
     async def run_until_disconnected(self) -> None:
+        import asyncio as _asyncio
+
         await self._app.initialize()
         await self._app.start()
         await self._app.updater.start_polling(drop_pending_updates=True)
         logger.info("Bot polling started")
-        try:
-            await self._app.updater.idle()
-        finally:
-            await self._app.shutdown()
+
+        stop_event = _asyncio.Event()
+
+        def _signal_handler() -> None:
+            stop_event.set()
+
+        import signal
+        loop = _asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _signal_handler)
+            except NotImplementedError:
+                pass
+
+        await stop_event.wait()
+        await self._app.updater.stop()
+        await self._app.stop()
+        await self._app.shutdown()
 
     # ── Отправка сообщений ─────────────────────────────────────
 
