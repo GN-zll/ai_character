@@ -56,6 +56,12 @@ class ChatHistory:
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_chat_id ON messages(chat_id, timestamp)
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS read_state (
+                chat_id INTEGER PRIMARY KEY,
+                last_read_message_id INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         self._conn.commit()
 
         count = self._conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
@@ -83,6 +89,52 @@ class ChatHistory:
             self._conn.commit()
         except Exception:
             logger.exception("Failed to add message to history")
+
+    def get_last_read_message_id(self, chat_id: int) -> int:
+        """Получить message_id последнего прочитанного сообщения (0 = ничего)."""
+        row = self._conn.execute(
+            "SELECT last_read_message_id FROM read_state WHERE chat_id = ?",
+            (chat_id,),
+        ).fetchone()
+        return row[0] if row else 0
+
+    def mark_chat_read(self, chat_id: int, up_to_message_id: int) -> None:
+        """Пометить чат прочитанным до указанного message_id (включительно).
+
+        Хранится локально — Bot API не умеет mark_read, поэтому
+        прочитанность отслеживаем сами.
+        """
+        try:
+            self._conn.execute(
+                "INSERT INTO read_state (chat_id, last_read_message_id) VALUES (?, ?) "
+                "ON CONFLICT(chat_id) DO UPDATE SET last_read_message_id = ?",
+                (chat_id, up_to_message_id, up_to_message_id),
+            )
+            self._conn.commit()
+        except Exception:
+            logger.exception("Failed to mark chat as read")
+
+    def get_unread_messages(self, chat_id: int, limit: int = 50) -> list[ChatMessage]:
+        """Получить входящие сообщения, ещё не прочитанные (новее last_read)."""
+        last_read = self.get_last_read_message_id(chat_id)
+        rows = self._conn.execute(
+            "SELECT message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "FROM messages WHERE chat_id = ? AND is_outgoing = 0 AND message_id > ? "
+            "ORDER BY timestamp ASC LIMIT ?",
+            (chat_id, last_read, limit),
+        ).fetchall()
+
+        messages = []
+        for row in rows:
+            messages.append(ChatMessage(
+                message_id=row[0],
+                sender_id=row[1],
+                sender_name=row[2],
+                text=row[3],
+                timestamp=datetime.fromtimestamp(row[4], tz=timezone.utc),
+                is_outgoing=bool(row[5]),
+            ))
+        return messages
 
     def get_messages(self, chat_id: int, limit: int = 20) -> list[ChatMessage]:
         """Получить последние N сообщений из чата."""

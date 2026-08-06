@@ -386,14 +386,14 @@ async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -
     if not ctx.chat_history:
         return None
 
-    messages = ctx.chat_history.get_messages(chat_id, limit=20)
-    # Ищем непрочитанные (все входящие — условно unread, т.к. бот не помечает)
-    unread = [m for m in messages if not m.is_outgoing]
+    unread = ctx.chat_history.get_unread_messages(chat_id, limit=20)
 
     if not unread:
         return None
 
-    # "Открываем чат" — помечаем прочитанным
+    # "Открываем чат" — помечаем прочитанным локально и на стороне Telegram
+    last_msg_id = max(m.message_id for m in unread)
+    ctx.chat_history.mark_chat_read(chat_id, last_msg_id)
     if ctx.client:
         try:
             await ctx.client.mark_read(chat_id)
@@ -795,7 +795,10 @@ async def _tool_open_chat(args: dict, ctx: ToolContext) -> str:
     if not messages:
         return f"No messages found in chat {chat_id}. Nothing to read."
 
-    # Помечаем чат прочитанным
+    # Помечаем чат прочитанным (локально + на стороне Telegram)
+    last_msg_id = max((m.message_id for m in messages if not m.is_outgoing), default=0)
+    if last_msg_id and ctx.chat_history:
+        ctx.chat_history.mark_chat_read(chat_id, last_msg_id)
     if ctx.client:
         try:
             await ctx.client.mark_read(chat_id)
