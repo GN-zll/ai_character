@@ -194,27 +194,27 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
 
 
 async def _typing_loop(client, chat_id: int, stop: asyncio.Event) -> None:
-    """Посылает typing indicator каждые 4 сек, пока не вызван stop."""
+    """Посылает typing indicator каждые 3 сек, пока не вызван stop."""
     try:
         while not stop.is_set():
             try:
                 await client.send_chat_action(chat_id, "typing")
             except Exception:
                 pass
-            await asyncio.sleep(4)
+            await asyncio.sleep(3)
     except asyncio.CancelledError:
         pass
 
 
 async def _simulate_typing_delay(text: str) -> None:
     """Имитация набора текста — задержка в зависимости от длины сообщения."""
-    min_wpm = 200
-    max_wpm = 500
+    min_wpm = 100
+    max_wpm = 300
     wpm = random.uniform(min_wpm, max_wpm)
-    chars_per_sec = wpm * 5 / 60  # ~17-42 символа/сек
+    chars_per_sec = wpm * 5 / 60  # ~8-25 символа/сек
     delay = len(text) / chars_per_sec
     delay = min(delay, 15.0)  # макс 15 сек
-    delay = max(delay, 0.5)   # мин 0.5 сек
+    delay = max(delay, 2.0)   # мин 2 сек
     logger.debug("Typing delay: %.1fs for %d chars", delay, len(text))
     await asyncio.sleep(delay)
 
