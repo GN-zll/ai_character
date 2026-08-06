@@ -13,6 +13,11 @@ deploy:
 logs:
 	sudo journalctl -u ai-character -f
 
+update:
+	git pull origin main
+	.venv/bin/pip install -e .
+	sudo systemctl restart ai-character
+
 restart:
 	sudo systemctl restart ai-character
 
