@@ -9,7 +9,6 @@ embedding_model = "text-embedding-3-small"
 
 [character]
 name = "Yuki"
-owner_name = "YourName"      # переопределяется OWNER_NAME в .env
 prompt_file = "data/character_base.md"
 
 [memory]
