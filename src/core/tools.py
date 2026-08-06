@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from src.memory.diary import Diary
     from src.memory.rag import VectorStore
     from src.memory.contacts import Contacts
+    from src.memory.chat_history import ChatHistory
     from src.core.notification import NotificationManager
     from src.llm.provider import ChatMessage
 
@@ -27,6 +28,7 @@ class ToolContext:
     diary: Diary
     vector_store: VectorStore
     contacts: object = None  # Contacts
+    chat_history: object = None  # ChatHistory
     notification_manager: NotificationManager = None
     llm: object = None  # LLMProvider (avoid circular import)
     temporary_context: list = field(default_factory=list)
@@ -131,6 +133,29 @@ def build_tools() -> list[Tool]:
                 "required": ["chat_id"],
             },
         ),
+        Tool(
+            name="get_chat_context",
+            description="Get recent messages from a chat to understand the conversation context. Use before writing to someone.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "integer",
+                        "description": "Chat ID to get context for",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of recent messages (default 20)",
+                    },
+                },
+                "required": ["chat_id"],
+            },
+        ),
+        Tool(
+            name="get_chats",
+            description="List all chats you can write to, with last activity time. Use to decide who to write to proactively.",
+            parameters={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -154,6 +179,10 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_contacts_get(args, ctx)
         elif name == "contacts_update":
             return _tool_contacts_update(args, ctx)
+        elif name == "get_chat_context":
+            return _tool_get_chat_context(args, ctx)
+        elif name == "get_chats":
+            return _tool_get_chats(args, ctx)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -179,10 +208,12 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
             for i, line in enumerate(lines):
                 if i > 0:
                     await _simulate_typing_delay(line)
-                await ctx.client.send_message(chat_id, line)
+                sent = await ctx.client.send_message(chat_id, line)
+                _save_outgoing(ctx, chat_id, sent.message_id, line)
             return f"Sent {len(lines)} messages to {chat_id}."
         else:
-            await ctx.client.send_message(chat_id, text)
+            sent = await ctx.client.send_message(chat_id, text)
+            _save_outgoing(ctx, chat_id, sent.message_id, text)
             return f"Message sent to {chat_id}."
     finally:
         # Останавливаем typing indicator
@@ -300,3 +331,58 @@ def _tool_contacts_update(args: dict, ctx: ToolContext) -> str:
 
     contact = ctx.contacts.update(chat_id, name=name, description=description, tags=tags)
     return f"Contact updated: {contact.chat_id} = {contact.name}"
+
+
+def _save_outgoing(ctx: ToolContext, chat_id: int, message_id: int, text: str) -> None:
+    """Сохранить исходящее сообщение в историю."""
+    if ctx.chat_history:
+        try:
+            me = ctx.contacts.get_or_default(0) if ctx.contacts else None
+            ctx.chat_history.add_message(
+                chat_id=chat_id,
+                message_id=message_id,
+                sender_id=0,
+                sender_name=me.name if me else "bot",
+                text=text,
+                is_outgoing=True,
+            )
+        except Exception:
+            logger.exception("Failed to save outgoing message")
+
+
+def _tool_get_chat_context(args: dict, ctx: ToolContext) -> str:
+    if not ctx.chat_history:
+        return "Chat history not available."
+
+    chat_id = args["chat_id"]
+    limit = args.get("limit", 20)
+
+    messages = ctx.chat_history.get_messages(chat_id, limit=limit)
+    if not messages:
+        return f"No messages found for chat {chat_id}."
+
+    lines = []
+    for m in messages:
+        role = "me" if m.is_outgoing else m.sender_name
+        lines.append(f"[{role}]: {m.text}")
+    return "\n".join(lines)
+
+
+def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
+    if not ctx.chat_history or not ctx.contacts:
+        return "Chat history or contacts not available."
+
+    chats = ctx.chat_history.get_all_chats()
+    contacts = {c.chat_id: c for c in ctx.contacts.list_all()}
+
+    if not chats:
+        return "No chats yet."
+
+    lines = []
+    for chat in chats:
+        cid = chat["chat_id"]
+        contact = contacts.get(cid)
+        name = contact.name if contact else f"User#{cid}"
+        desc = f" — {contact.description}" if contact and contact.description else ""
+        lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
+    return "Chats:\n" + "\n".join(lines)

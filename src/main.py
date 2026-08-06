@@ -13,6 +13,7 @@ from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
 from src.memory.contacts import Contacts
+from src.memory.chat_history import ChatHistory
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.worker import Worker
@@ -50,6 +51,7 @@ async def main() -> None:
     vector_store = VectorStore()
     working_memory = WorkingMemory()
     contacts = Contacts()
+    chat_history = ChatHistory()
     personality = Personality()
     notification_manager = NotificationManager()
 
@@ -66,6 +68,7 @@ async def main() -> None:
         vector_store=vector_store,
         working_memory=working_memory,
         contacts=contacts,
+        chat_history=chat_history,
         personality=personality,
         notification_manager=notification_manager,
     )
@@ -74,11 +77,13 @@ async def main() -> None:
         notification_manager=notification_manager,
         diary=diary,
         llm=llm,
+        contacts=contacts,
+        chat_history=chat_history,
     )
 
     batcher = MessageBatcher(notification_manager, min_delay=0.0, max_delay=5.0)
 
-    # ── Message handler → batcher ─────────────────────────────
+    # ── Message handler → history + batcher ───────────────────
     @client.on_new_message()
     async def on_message(msg: IncomingMessage) -> None:
         if whitelist and msg.chat_id not in whitelist:
@@ -87,6 +92,23 @@ async def main() -> None:
 
         logger.info("Message from %s (chat_id=%s): %s", msg.sender_name, msg.chat_id, msg.text)
 
+        # Сохраняем в историю
+        if msg.text:
+            chat_history.add_message(
+                chat_id=msg.chat_id,
+                message_id=msg.message_id,
+                sender_id=msg.sender_id,
+                sender_name=msg.sender_name,
+                text=msg.text,
+                is_outgoing=msg.is_outgoing,
+            )
+
+        # Auto-add contact если новый
+        if not msg.is_outgoing and not contacts.get(msg.chat_id):
+            contacts.update(msg.chat_id, name=msg.sender_name, tags=["auto"])
+            logger.info("Auto-added contact: %s (%s)", msg.sender_name, msg.chat_id)
+
+        # Отправляем в batcher
         if msg.text and not msg.is_outgoing:
             await batcher.add(msg)
 

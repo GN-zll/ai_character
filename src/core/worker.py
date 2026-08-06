@@ -12,6 +12,7 @@ from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
 from src.memory.contacts import Contacts
+from src.memory.chat_history import ChatHistory
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.tools import build_tools, execute_tool, ToolContext
@@ -38,6 +39,7 @@ class Worker:
         vector_store: VectorStore,
         working_memory: WorkingMemory,
         contacts: Contacts,
+        chat_history: ChatHistory,
         personality: Personality,
         notification_manager: NotificationManager,
     ) -> None:
@@ -48,6 +50,7 @@ class Worker:
         self._vector_store = vector_store
         self._working_memory = working_memory
         self._contacts = contacts
+        self._chat_history = chat_history
         self._personality = personality
         self._notification_manager = notification_manager
 
@@ -111,6 +114,7 @@ class Worker:
             diary=self._diary,
             vector_store=self._vector_store,
             contacts=self._contacts,
+            chat_history=self._chat_history,
             notification_manager=self._notification_manager,
             llm=self._llm,
             temporary_context=self._temporary_context,

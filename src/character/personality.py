@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+CHARACTER_BASE_PATH = "data/character_base.md"
 
 
 @dataclass
@@ -25,14 +28,28 @@ class EmotionalState:
 class Personality:
     """Управление персонажем: промпт, характер, эмоции."""
 
-    def __init__(self) -> None:
+    def __init__(self, prompt_path: str | Path = CHARACTER_BASE_PATH) -> None:
         self._name = os.getenv("CHARACTER_NAME", "Yuki")
         self._owner_name = os.getenv("OWNER_NAME", "master")
         self._emotional_state = EmotionalState()
+        self._prompt_path = Path(prompt_path)
 
-        self._base_prompt = self._build_base_prompt()
+        self._base_prompt = self._load_prompt()
 
-    def _build_base_prompt(self) -> str:
+    def _load_prompt(self) -> str:
+        """Загрузить промпт из файла. Если файла нет — создать дефолтный."""
+        if self._prompt_path.exists():
+            text = self._prompt_path.read_text(encoding="utf-8").strip()
+            # Подставляем переменные
+            text = text.replace("{{name}}", self._name)
+            text = text.replace("{{owner}}", self._owner_name)
+            logger.info("Character prompt loaded from %s (%d chars)", self._prompt_path, len(text))
+            return text
+
+        logger.warning("Character prompt not found at %s, using default", self._prompt_path)
+        return self._default_prompt()
+
+    def _default_prompt(self) -> str:
         return f"""You are {self._name}, an AI character living in Telegram.
 You have your own personality, emotions, and memory.
 
@@ -53,9 +70,14 @@ IMPORTANT:
 - Respond in the same language the user writes to you
 - Keep responses short and natural (1-3 messages usually)
 - You can use multiple short messages instead of one long one
-- ALWAYS use send_message() tool to send your response. Your text is NOT visible until you call send_message().
-- Call wait() when you are done responding and have nothing more to say.
+- ALWAYS use send_message() tool to send your response.
+- Call wait() when you are done responding.
 """
+
+    def reload_prompt(self) -> None:
+        """Перезагрузить промпт из файла (для hot-reload)."""
+        self._base_prompt = self._load_prompt()
+        logger.info("Character prompt reloaded")
 
     def get_system_prompt(
         self,
