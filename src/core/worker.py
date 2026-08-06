@@ -100,6 +100,15 @@ class Worker:
         """Основной цикл worker'а."""
         while self._running:
             try:
+                # Random sleep (AFK) — 1% шанс
+                if random.random() < self._config.behavior.random_sleep_chance:
+                    duration = random.randint(
+                        self._config.behavior.random_sleep_min,
+                        self._config.behavior.random_sleep_max,
+                    )
+                    logger.info("Random AFK for %d minutes", duration)
+                    await asyncio.sleep(duration * 60)
+
                 notification = await self._notification_manager.next()
                 await self._handle_notification(notification)
             except asyncio.CancelledError:
@@ -122,10 +131,19 @@ class Worker:
 
         logger.info("Worker %s processing: %s", self._name, notification.message[:200])
 
+        # Relationship context — показываем статы отношений если есть
+        chat_id = notification.metadata.get("chat_id")
+        relationship_context = ""
+        if chat_id and self._contacts:
+            rel = self._contacts.format_relationship(chat_id)
+            if rel:
+                relationship_context = rel + "\n"
+
         # Добавляем входящее в контекст
+        full_message = relationship_context + notification.message
         self._temporary_context.append(ChatMessage(
             role="user",
-            content=notification.message,
+            content=full_message,
         ))
 
         # Diary lookup — ищем связанные записи
@@ -150,6 +168,7 @@ class Worker:
             notification_manager=self._notification_manager,
             llm=self._llm,
             config=self._config,
+            personality=self._personality,
             temporary_context=self._temporary_context,
             anti_repeat=self._anti_repeat,
             sleep_manager=self._sleep_manager,

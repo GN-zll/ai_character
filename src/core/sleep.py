@@ -41,6 +41,7 @@ class SleepManager:
         diary: Diary,
         llm: LLMProvider,
         working_memory: WorkingMemory,
+        contacts: object = None,  # Contacts
         on_wake_callback: object = None,  # Callable[[], None]
     ) -> None:
         self._config = config
@@ -48,6 +49,7 @@ class SleepManager:
         self._diary = diary
         self._llm = llm
         self._working_memory = working_memory
+        self._contacts = contacts
         self._on_wake_callback = on_wake_callback
 
         self._last_wake_time = datetime.now(timezone.utc)
@@ -133,6 +135,9 @@ class SleepManager:
         # Diary consolidation
         consolidated = await self._consolidate_diary()
 
+        # Relationship summary consolidation
+        summaries_updated = await self._consolidate_relationship_summaries()
+
         # Обновляем working memory
         await self._update_working_memory()
 
@@ -142,8 +147,9 @@ class SleepManager:
             alarm_str = f" Alarm set for {self._alarm.strftime('%H:%M')} MSK."
 
         return (
-            f"Goodnight! 💤 Time: {msk.strftime('%H:%M')} MSK.{alarm_str}\n"
+            f"Goodnight! Time: {msk.strftime('%H:%M')} MSK.{alarm_str}\n"
             f"Diary consolidated: {consolidated} entries processed.\n"
+            f"Relationship summaries updated: {summaries_updated} contacts.\n"
             f"You are now sleeping. Sweet dreams!"
         )
 
@@ -205,6 +211,65 @@ class SleepManager:
             metadata={"source": "alarm_wake_up"},
         ))
         logger.info("Woke up at %s MSK", msk.strftime('%H:%M'))
+
+    async def _consolidate_relationship_summaries(self) -> int:
+        """Обновить summary отношений для контактов с изменениями за день."""
+        if not self._contacts:
+            return 0
+
+        # Находим контакты с ненулевыми статами
+        changed = self._contacts.get_changed_contacts()
+        if not changed:
+            return 0
+
+        # Загружаем diary entries за сегодня с изменениями статов
+        today_entries = self._diary.list_today_changes()
+        if not today_entries:
+            return 0
+
+        updated = 0
+        for contact in changed:
+            # Собираем записи для этого контакта
+            contact_entries = [e for e in today_entries if e.chat_id == contact.chat_id]
+            if not contact_entries:
+                continue
+
+            entries_text = "\n".join(f"- {e.text}" for e in contact_entries[:10])
+            stat_parts = []
+            for stat_name, value in contact.stats.items():
+                if value != 0:
+                    label = self._contacts.get_stat_level(stat_name, value)
+                    stat_parts.append(f"{stat_name}: {value:+d} {label}")
+            stats_str = " | ".join(stat_parts) if stat_parts else "no changes"
+
+            prompt = ChatMessage(
+                role="user",
+                content=(
+                    f"Update relationship summary for {contact.name} (chat_id={contact.chat_id}).\n\n"
+                    f"Current stats: {stats_str}\n\n"
+                    f"Today's interactions:\n{entries_text}\n\n"
+                    f"Current summary: {contact.summary or '(none)'}\n\n"
+                    f"Write a new summary (50-100 chars, English). Focus on the current state of the relationship, "
+                    f"recent dynamics, and key feelings. Be concise and factual.\n\n"
+                    f"New summary:"
+                ),
+            )
+
+            try:
+                response = await self._llm.chat(
+                    messages=[
+                        ChatMessage(role="system", content="You are a relationship analyst. Write concise summaries in English."),
+                        prompt,
+                    ]
+                )
+                if response.content:
+                    self._contacts.update_summary(contact.chat_id, response.content.strip())
+                    updated += 1
+                    logger.info("Summary updated for %s: %s", contact.name, response.content[:80])
+            except Exception:
+                logger.exception("Failed to update summary for %s", contact.name)
+
+        return updated
 
     async def _consolidate_diary(self) -> int:
         """Консолидация дневника — сжатие похожих записей."""

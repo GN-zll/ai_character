@@ -20,8 +20,24 @@ working_memory_file = "data/working_memory.md"
 contacts_file = "data/contacts.json"
 history_db = "data/history.db"
 history_max_per_chat = 1000
+stat_levels_file = "data/stat_levels.json"
+
+[[relationship_stats]]
+name = "trust"
+description = "Trust. Grows when person shares vulnerable things, is honest, doesn't manipulate. Drops from lies and manipulation."
+
+[[relationship_stats]]
+name = "closeness"
+description = "Emotional closeness. Grows from shared interests, care, remembering details. Drops from coldness, rudeness, ignoring messages."
+
+[[relationship_stats]]
+name = "tension"
+description = "Tension. Grows from conflicts, misunderstandings, hurt feelings. Drops from discussing problems and resolving them. High tension = reluctance to communicate."
 
 [behavior]
+random_sleep_chance = 0.01    # шанс случайного AFK (0.0-1.0)
+random_sleep_min = 15         # мин длительность AFK (минуты)
+random_sleep_max = 120        # макс длительность AFK (минуты)
 proactive_interval_min = 27
 proactive_chance = 0.5
 batch_delay_min = 0.0

@@ -40,6 +40,7 @@ class ToolContext:
     notification_manager: NotificationManager = None
     llm: object = None  # LLMProvider (avoid circular import)
     config: object = None  # Config
+    personality: object = None  # Personality
     temporary_context: list = field(default_factory=list)
     messages_in_a_row: int = field(default=0)
     anti_repeat: object = None  # AntiRepeat
@@ -81,6 +82,20 @@ _BASE_TOOLS: list[Tool] = [
                 "entry": {
                     "type": "string",
                     "description": "The diary entry text",
+                },
+                "entry_type": {
+                    "type": "string",
+                    "enum": ["general", "person", "reflection"],
+                    "description": "Type of entry: general (default), person (about specific person, requires chat_id), reflection (about your mood/emotions)",
+                },
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Chat ID if entry_type is 'person'",
+                },
+                "stat_changes": {
+                    "type": "object",
+                    "description": "Relationship stat changes if entry_type is 'person'. Example: {\"trust\": 2, \"closeness\": -1}",
+                    "additionalProperties": {"type": "integer"},
                 },
             },
             "required": ["entry"],
@@ -172,6 +187,59 @@ _BASE_TOOLS: list[Tool] = [
         name="get_chats",
         description="List all chats you can write to, with last activity time. Use to decide who to write to proactively.",
         parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="reflect_mood",
+        description="Reflect on how recent events affected your mood. Updates your emotional state.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "mood": {
+                    "type": "string",
+                    "enum": ["happy", "sad", "excited", "anxious", "calm", "angry", "amused", "neutral"],
+                    "description": "Your current mood",
+                },
+                "energy": {
+                    "type": "number",
+                    "description": "Energy level 0.0 (exhausted) to 1.0 (energetic)",
+                },
+                "sociability": {
+                    "type": "number",
+                    "description": "Sociability 0.0 (withdrawn) to 1.0 (very social)",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why your mood changed",
+                },
+            },
+            "required": ["mood", "reason"],
+        },
+    ),
+    Tool(
+        name="update_relationship",
+        description="Update your relationship stats with a person based on interaction.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Chat ID of the person",
+                },
+                "trust": {
+                    "type": "integer",
+                    "description": "Trust change (-100 to +100)",
+                },
+                "closeness": {
+                    "type": "integer",
+                    "description": "Emotional closeness change (-100 to +100)",
+                },
+                "tension": {
+                    "type": "integer",
+                    "description": "Tension change (-100 to +100)",
+                },
+            },
+            "required": ["chat_id"],
+        },
     ),
     Tool(
         name="sleep",
@@ -272,6 +340,10 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_get_chat_context(args, ctx)
         elif name == "get_chats":
             return _tool_get_chats(args, ctx)
+        elif name == "reflect_mood":
+            return await _tool_reflect_mood(args, ctx)
+        elif name == "update_relationship":
+            return _tool_update_relationship(args, ctx)
         elif name == "sleep":
             return await _tool_sleep(args, ctx)
         elif name == "confirm_sleep":
@@ -460,7 +532,25 @@ async def _maybe_auto_correct(ctx: ToolContext, chat_id: int, message_id: int, c
 
 async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
     entry_text = args["entry"]
-    entry = ctx.diary.add(entry_text, source="diary")
+    entry_type = args.get("entry_type", "general")
+    chat_id = args.get("chat_id")
+    stat_changes = args.get("stat_changes", {})
+
+    # Валидация: person type требует chat_id
+    if entry_type == "person" and chat_id is None:
+        return "Error: chat_id is required for entry_type 'person'."
+
+    entry = ctx.diary.add(
+        entry_text,
+        source="diary",
+        entry_type=entry_type,
+        chat_id=chat_id,
+        stat_changes=stat_changes,
+    )
+
+    # Обновляем статы отношений если есть изменения
+    if stat_changes and chat_id and ctx.contacts:
+        ctx.contacts.update_stats(chat_id, stat_changes)
 
     # Добавляем эмбеддинг в векторную БД
     if ctx.llm:
@@ -470,12 +560,15 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
                 ctx.vector_store.add(
                     text=entry_text,
                     embedding=embedding,
-                    metadata={"entry_id": entry.id, "source": "diary"},
+                    metadata={"entry_id": entry.id, "source": "diary", "type": entry_type},
                 )
         except Exception:
             logger.exception("Failed to embed diary entry")
 
-    return f"Diary entry saved: {entry.id}"
+    result = f"Diary entry saved: {entry.id} (type={entry_type})"
+    if stat_changes and chat_id:
+        result += f"\nStat changes applied: {stat_changes}"
+    return result
 
 
 async def _tool_ask(args: dict, ctx: ToolContext) -> str:
@@ -595,6 +688,45 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
         lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
     return "Chats:\n" + "\n".join(lines)
 
+
+async def _tool_reflect_mood(args: dict, ctx: ToolContext) -> str:
+    """Обновить настроение через рефлексию."""
+    mood = args["mood"]
+    reason = args["reason"]
+    energy = args.get("energy")
+    sociability = args.get("sociability")
+
+    ctx.personality.update_mood(mood, energy=energy, sociability=sociability)
+
+    result = f"Mood updated to '{mood}'."
+    if energy is not None:
+        result += f" Energy: {energy:.1f}."
+    if sociability is not None:
+        result += f" Sociability: {sociability:.1f}."
+    result += f"\nReason: {reason}"
+    return result
+
+
+def _tool_update_relationship(args: dict, ctx: ToolContext) -> str:
+    """Обновить статы отношений напрямую."""
+    chat_id = args["chat_id"]
+    stat_changes = {k: v for k, v in args.items() if k != "chat_id"}
+
+    if not stat_changes:
+        return "Error: at least one stat change is required."
+
+    if not ctx.contacts:
+        return "Contacts not available."
+
+    contact = ctx.contacts.update_stats(chat_id, stat_changes)
+
+    # Форматируем результат
+    parts = [f"Relationship with {contact.name} (chat_id={chat_id}) updated:"]
+    for stat_name, delta in stat_changes.items():
+        value = contact.stats.get(stat_name, 0)
+        label = ctx.contacts.get_stat_level(stat_name, value)
+        parts.append(f"  {stat_name}: {value:+d} {label} ({delta:+d})")
+    return "\n".join(parts)
 
 
 async def _tool_sleep(args: dict, ctx: ToolContext) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +41,7 @@ class MemoryConfig:
     contacts_file: str = "data/contacts.json"
     history_db: str = "data/history.db"
     history_max_per_chat: int = 1000
+    stat_levels_file: str = "data/stat_levels.json"
 
 
 @dataclass
@@ -63,6 +65,9 @@ class BehaviorConfig:
     typo_correct_chance: float = 0.57
     typo_correct_delay_min: float = 15.0
     typo_correct_delay_max: float = 45.0
+    random_sleep_chance: float = 0.01
+    random_sleep_min: int = 15
+    random_sleep_max: int = 120
 
 
 @dataclass
@@ -74,6 +79,52 @@ class NightConfig:
 
 
 @dataclass
+class RelationshipStatConfig:
+    name: str = ""
+    description: str = ""
+
+
+@dataclass
+class StatLevel:
+    min: int = 0
+    max: int = 0
+    label: str = ""
+
+
+@dataclass
+class StatLevelsConfig:
+    """Загруженные уровни статов из stat_levels.json."""
+    levels: dict[str, list[StatLevel]] = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, path: str = "data/stat_levels.json") -> StatLevelsConfig:
+        """Загрузить уровни статов из JSON файла."""
+        config = cls()
+        if not Path(path).exists():
+            return config
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        for stat_name, stat_data in data.items():
+            config.levels[stat_name] = [
+                StatLevel(min=lvl["min"], max=lvl["max"], label=lvl["label"])
+                for lvl in stat_data.get("levels", [])
+            ]
+        return config
+
+    def get_label(self, stat_name: str, value: int) -> str:
+        """Получить текстовый label для значения стата."""
+        levels = self.levels.get(stat_name, [])
+        for lvl in levels:
+            if lvl.min <= value < lvl.max:
+                return lvl.label
+        # Граничное значение
+        if levels and value >= levels[-1].max:
+            return levels[-1].label
+        if levels and value <= levels[0].min:
+            return levels[0].label
+        return "neutral"
+
+
+@dataclass
 class Config:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -81,6 +132,8 @@ class Config:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     behavior: BehaviorConfig = field(default_factory=BehaviorConfig)
     night: NightConfig = field(default_factory=NightConfig)
+    relationship_stats: list[RelationshipStatConfig] = field(default_factory=list)
+    stat_levels: StatLevelsConfig = field(default_factory=StatLevelsConfig)
 
     @classmethod
     def load(cls, path: str = CONFIG_PATH) -> Config:
@@ -104,6 +157,17 @@ class Config:
         behavior = BehaviorConfig(**data.get("behavior", {}))
         night = NightConfig(**data.get("night", {}))
 
+        # Relationship stats
+        rel_stats = []
+        for item in data.get("relationship_stats", []):
+            rel_stats.append(RelationshipStatConfig(
+                name=item.get("name", ""),
+                description=item.get("description", ""),
+            ))
+
+        # Stat levels
+        stat_levels = StatLevelsConfig.load(memory.stat_levels_file)
+
         return cls(
             telegram=telegram,
             llm=llm,
@@ -111,4 +175,6 @@ class Config:
             memory=memory,
             behavior=behavior,
             night=night,
+            relationship_stats=rel_stats,
+            stat_levels=stat_levels,
         )

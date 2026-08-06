@@ -41,7 +41,15 @@ async def main() -> None:
     diary = Diary(config.memory.diary_dir)
     vector_store = VectorStore(config.memory.vectors_dir)
     working_memory = WorkingMemory(config.memory.working_memory_file)
-    contacts = Contacts(config.memory.contacts_file)
+
+    # Contacts с статами отношений
+    stat_names = [s.name for s in config.relationship_stats]
+    contacts = Contacts(
+        config.memory.contacts_file,
+        stat_names=stat_names,
+        stat_levels=config.stat_levels,
+    )
+
     chat_history = ChatHistory(config.memory.history_db, config.memory.history_max_per_chat)
     personality = Personality(config.character)
     notification_manager = NotificationManager()
@@ -60,6 +68,7 @@ async def main() -> None:
         diary=diary,
         llm=llm,
         working_memory=working_memory,
+        contacts=contacts,
     )
 
     worker = Worker(

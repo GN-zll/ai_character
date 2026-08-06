@@ -1,0 +1,53 @@
+{
+  "trust": {
+    "min": -100,
+    "max": 100,
+    "levels": [
+      {"min": -100, "max": -80, "label": "betrayed"},
+      {"min": -80,  "max": -60, "label": "suspicious"},
+      {"min": -60,  "max": -45, "label": "distrustful"},
+      {"min": -45,  "max": -30, "label": "wary"},
+      {"min": -30,  "max": -15, "label": "cautious"},
+      {"min": -15,  "max":  15, "label": "neutral"},
+      {"min":  15,  "max":  30, "label": "trusting"},
+      {"min":  30,  "max":  50, "label": "confident"},
+      {"min":  50,  "max":  70, "label": "reliable"},
+      {"min":  70,  "max":  85, "label": "faithful"},
+      {"min":  85,  "max": 100, "label": "absolute trust"}
+    ]
+  },
+  "closeness": {
+    "min": -100,
+    "max": 100,
+    "levels": [
+      {"min": -100, "max": -80, "label": "repulsed"},
+      {"min": -80,  "max": -60, "label": "hostile"},
+      {"min": -60,  "max": -45, "label": "cold"},
+      {"min": -45,  "max": -30, "label": "distant"},
+      {"min": -30,  "max": -15, "label": "indifferent"},
+      {"min": -15,  "max":  15, "label": "neutral"},
+      {"min":  15,  "max":  30, "label": "warm"},
+      {"min":  30,  "max":  50, "label": "friendly"},
+      {"min":  50,  "max":  70, "label": "close"},
+      {"min":  70,  "max":  85, "label": "bonded"},
+      {"min":  85,  "max": 100, "label": "soulmate"}
+    ]
+  },
+  "tension": {
+    "min": -100,
+    "max": 100,
+    "levels": [
+      {"min": -100, "max": -80, "label": "peaceful"},
+      {"min": -80,  "max": -60, "label": "calm"},
+      {"min": -60,  "max": -45, "label": "relaxed"},
+      {"min": -45,  "max": -30, "label": "easy"},
+      {"min": -30,  "max": -15, "label": "comfortable"},
+      {"min": -15,  "max":  15, "label": "neutral"},
+      {"min":  15,  "max":  30, "label": "uneasy"},
+      {"min":  30,  "max":  50, "label": "strained"},
+      {"min":  50,  "max":  70, "label": "tense"},
+      {"min":  70,  "max":  85, "label": "conflicted"},
+      {"min":  85,  "max": 100, "label": "explosive"}
+    ]
+  }
+}
