@@ -377,6 +377,44 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
         return f"Error executing {name}: {e}"
 
 
+async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -> str | None:
+    """Проверить непрочитанные перед отправкой.
+
+    Если есть непрочитанные — открываем чат и показываем что увидели.
+    LLM решает что делать дальше (продолжить отправку или обработать unread).
+    """
+    if not ctx.chat_history:
+        return None
+
+    messages = ctx.chat_history.get_messages(chat_id, limit=20)
+    # Ищем непрочитанные (все входящие — условно unread, т.к. бот не помечает)
+    unread = [m for m in messages if not m.is_outgoing]
+
+    if not unread:
+        return None
+
+    # "Открываем чат" — помечаем прочитанным
+    if ctx.client:
+        try:
+            await ctx.client.mark_read(chat_id)
+        except Exception:
+            pass
+
+    # Формируем контекст
+    lines = []
+    for m in unread:
+        lines.append(f"[id={m.message_id} {m.sender_name}]: {m.text}")
+
+    unread_text = "\n".join(lines)
+
+    return (
+        f"You were about to send this message:\n\"{text}\"\n\n"
+        f"But you opened chat {chat_id} and found {len(unread)} unread message(s):\n"
+        f"{unread_text}\n\n"
+        f"Read the unread messages first. You can still send your message afterwards."
+    )
+
+
 async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
     chat_id = args["chat_id"]
     text = args["text"]
@@ -387,6 +425,12 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
         repeat_error = await ctx.anti_repeat.check(chat_id, text)
         if repeat_error:
             return f"Error: {repeat_error}"
+
+    # Проверяем непрочитанные сообщения перед отправкой
+    # Если есть — "открываем чат" и показываем что увидели
+    unread_result = await _check_unread_before_send(ctx, chat_id, text)
+    if unread_result:
+        return unread_result
 
     # Запускаем фоновый typing indicator (каждые 3 сек)
     typing_stop = asyncio.Event()
