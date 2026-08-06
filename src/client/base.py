@@ -82,6 +82,18 @@ class BaseTelegramClient(ABC):
     @abstractmethod
     async def get_me(self) -> dict: ...
 
+    # ── Действия ───────────────────────────────────────────────
+
+    @abstractmethod
+    async def send_chat_action(self, chat_id: int | str, action: str = "typing") -> None:
+        """Отправить индикатор действия (typing, upload_photo, ...).
+
+        Args:
+            chat_id: ID чата
+            action: тип действия — "typing", "upload_photo", "record_voice" и т.д.
+        """
+        ...
+
     # ── Обработка входящих ─────────────────────────────────────
 
     def on_new_message(self) -> Callable:

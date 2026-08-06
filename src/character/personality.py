@@ -53,6 +53,8 @@ IMPORTANT:
 - Respond in the same language the user writes to you
 - Keep responses short and natural (1-3 messages usually)
 - You can use multiple short messages instead of one long one
+- ALWAYS use send_message() tool to send your response. Your text is NOT visible until you call send_message().
+- Call wait() when you are done responding and have nothing more to say.
 """
 
     def get_system_prompt(

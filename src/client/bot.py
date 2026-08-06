@@ -105,6 +105,10 @@ class BotClient(BaseTelegramClient):
         user = await self._bot.get_me()
         return {"id": user.id, "first_name": user.first_name, "username": user.username}
 
+    async def send_chat_action(self, chat_id: int | str, action: str = "typing") -> None:
+        assert self._bot is not None
+        await self._bot.send_chat_action(chat_id=int(chat_id), action=action)
+
     # ── Обработка входящих ─────────────────────────────────────
 
     async def start_listening(self) -> None:

@@ -17,6 +17,7 @@ from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.worker import Worker
 from src.core.proactive import ProactiveScheduler
+from src.core.batcher import MessageBatcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,7 +76,9 @@ async def main() -> None:
         llm=llm,
     )
 
-    # ── Message handler → notification ─────────────────────────
+    batcher = MessageBatcher(notification_manager, min_delay=0.0, max_delay=5.0)
+
+    # ── Message handler → batcher ─────────────────────────────
     @client.on_new_message()
     async def on_message(msg: IncomingMessage) -> None:
         if whitelist and msg.chat_id not in whitelist:
@@ -85,13 +88,7 @@ async def main() -> None:
         logger.info("Message from %s (chat_id=%s): %s", msg.sender_name, msg.chat_id, msg.text)
 
         if msg.text and not msg.is_outgoing:
-            notification = Notification(
-                priority=10,  # высокий приоритет для входящих сообщений
-                message=f"New message from {msg.sender_name} (chat_id={msg.chat_id}): {msg.text}",
-                pin=f"<chat_id={msg.chat_id} />",
-                metadata={"chat_id": msg.chat_id, "sender_name": msg.sender_name},
-            )
-            await notification_manager.push(notification)
+            await batcher.add(msg)
 
     # ── Start ──────────────────────────────────────────────────
     logger.info("Starting...")

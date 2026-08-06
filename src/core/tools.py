@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -162,8 +164,44 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
 async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
     chat_id = args["chat_id"]
     text = args["text"]
-    await ctx.client.send_message(chat_id, text)
-    return f"Message sent to {chat_id}."
+
+    # Typing simulation delay (имитация набора текста)
+    await _simulate_typing_delay(text)
+
+    # Typing indicator
+    try:
+        await ctx.client.send_chat_action(chat_id, "typing")
+    except Exception:
+        pass  # не критично
+
+    # Разбиваем многострочные сообщения
+    lines = [l for l in text.split("\n") if l.strip()]
+    if len(lines) > 1:
+        for i, line in enumerate(lines):
+            if i > 0:
+                await _simulate_typing_delay(line)
+                try:
+                    await ctx.client.send_chat_action(chat_id, "typing")
+                except Exception:
+                    pass
+            await ctx.client.send_message(chat_id, line)
+        return f"Sent {len(lines)} messages to {chat_id}."
+    else:
+        await ctx.client.send_message(chat_id, text)
+        return f"Message sent to {chat_id}."
+
+
+async def _simulate_typing_delay(text: str) -> None:
+    """Имитация набора текста — задержка в зависимости от длины сообщения."""
+    min_wpm = 200
+    max_wpm = 500
+    wpm = random.uniform(min_wpm, max_wpm)
+    chars_per_sec = wpm * 5 / 60  # ~17-42 символа/сек
+    delay = len(text) / chars_per_sec
+    delay = min(delay, 15.0)  # макс 15 сек
+    delay = max(delay, 0.5)   # мин 0.5 сек
+    logger.debug("Typing delay: %.1fs for %d chars", delay, len(text))
+    await asyncio.sleep(delay)
 
 
 async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:

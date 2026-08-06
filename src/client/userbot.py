@@ -81,6 +81,11 @@ class UserbotClient(BaseTelegramClient):
         user: User = await self._client.get_me()
         return {"id": user.id, "first_name": user.first_name, "username": user.username}
 
+    async def send_chat_action(self, chat_id: int | str, action: str = "typing") -> None:
+        from telethon.tl.functions.messages import SetTypingRequest
+        from telethon.tl.types import SendMessageTypingAction
+        await self._client(SetTypingRequest(peer=chat_id, action=SendMessageTypingAction()))
+
     # ── Обработка входящих ─────────────────────────────────────
 
     async def start_listening(self) -> None:

@@ -134,10 +134,35 @@ class Worker:
             ))
 
             if not response.tool_calls:
-                # LLM не вызвал tool'ы — принудительно вызываем wait
+                # LLM не вызвал tool'ы
+                if response.content:
+                    # Сгенерировал текст но не вызвал send_message — напоминаем
+                    self._temporary_context.append(ChatMessage(
+                        role="user",
+                        content=(
+                            "You wrote a message but didn't send it. "
+                            "Use `send_message(chat_id, text)` to actually send it to the user. "
+                            "The message text is NOT visible to anyone until you call send_message."
+                        ),
+                    ))
+                else:
+                    self._temporary_context.append(ChatMessage(
+                        role="user",
+                        content="You need to call a tool. Use `wait` to finish this turn.",
+                    ))
+                continue
+
+            # Проверяем: если LLM сгенерировал текст + только wait/pause — напоминаем
+            has_send = any(tc.name == "send_message" for tc in response.tool_calls)
+            has_only_wait = all(tc.name in ("wait", "pause") for tc in response.tool_calls)
+            if response.content and not has_send and has_only_wait:
                 self._temporary_context.append(ChatMessage(
                     role="user",
-                    content="You need to call a tool. Use `wait` to finish this turn.",
+                    content=(
+                        "You wrote a message but didn't send it. "
+                        "Use `send_message(chat_id, text)` to send it. "
+                        "The text you wrote is NOT visible to anyone."
+                    ),
                 ))
                 continue
 
