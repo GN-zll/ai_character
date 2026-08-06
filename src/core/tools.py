@@ -5,6 +5,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from src.llm.provider import Tool, ToolCall
@@ -19,6 +20,13 @@ if TYPE_CHECKING:
     from src.llm.provider import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerMode(Enum):
+    """Режим работы worker'а — влияет на доступные tools и промпт."""
+    IDLE = "idle"
+    PREPARING_SLEEP = "preparing_sleep"
+    SLEEPING = "sleeping"
 
 
 @dataclass
@@ -36,176 +44,207 @@ class ToolContext:
     messages_in_a_row: int = field(default=0)
     anti_repeat: object = None  # AntiRepeat
     sleep_manager: object = None  # SleepManager
+    mode: WorkerMode = WorkerMode.IDLE
 
 
-def build_tools() -> list[Tool]:
-    """Построить список tool'ов для LLM."""
-    return [
-        Tool(
-            name="send_message",
-            description="Send a text message to a Telegram chat. Use this to reply to people.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chat_id": {
-                        "type": "integer",
-                        "description": "The Telegram chat ID to send the message to",
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "The message text to send",
-                    },
-                    "reply_to_message_id": {
-                        "type": "integer",
-                        "description": "Message ID to reply to (from get_chat_context). Omit if not replying.",
-                    },
+# ── Базовые tools (всегда доступны) ──────────────────────────
+
+_BASE_TOOLS: list[Tool] = [
+    Tool(
+        name="send_message",
+        description="Send a text message to a Telegram chat. Use this to reply to people.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "The Telegram chat ID to send the message to",
                 },
-                "required": ["chat_id", "text"],
-            },
-        ),
-        Tool(
-            name="diary_write",
-            description="Write a thought, event, or reflection to your diary for long-term memory.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "entry": {
-                        "type": "string",
-                        "description": "The diary entry text",
-                    },
+                "text": {
+                    "type": "string",
+                    "description": "The message text to send",
                 },
-                "required": ["entry"],
-            },
-        ),
-        Tool(
-            name="ask",
-            description="Search your diary/memory for related information about a topic.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "What to search for in your memory",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="wait",
-            description="Wait for the next notification. Use when you have nothing more to do right now.",
-            parameters={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="pause",
-            description="Pause and wait for the next event. Same as wait.",
-            parameters={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="contacts_get",
-            description="Get info about a contact by chat_id, or list all contacts if no chat_id given.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chat_id": {
-                        "type": "integer",
-                        "description": "Chat ID to look up. Omit to list all contacts.",
-                    },
+                "reply_to_message_id": {
+                    "type": "integer",
+                    "description": "Message ID to reply to (from get_chat_context). Omit if not replying.",
                 },
             },
-        ),
-        Tool(
-            name="contacts_update",
-            description="Create or update a contact in your address book. Set a name, description, or tags for a chat_id.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chat_id": {
-                        "type": "integer",
-                        "description": "The chat ID",
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Contact's name/nickname",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Short description of who this person is",
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Tags like 'friend', 'family', 'work'",
-                    },
+            "required": ["chat_id", "text"],
+        },
+    ),
+    Tool(
+        name="diary_write",
+        description="Write a thought, event, or reflection to your diary for long-term memory.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "entry": {
+                    "type": "string",
+                    "description": "The diary entry text",
                 },
-                "required": ["chat_id"],
             },
-        ),
-        Tool(
-            name="get_chat_context",
-            description="Get recent messages from a chat to understand the conversation context. Use before writing to someone.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chat_id": {
-                        "type": "integer",
-                        "description": "Chat ID to get context for",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Number of recent messages (default 20)",
-                    },
+            "required": ["entry"],
+        },
+    ),
+    Tool(
+        name="ask",
+        description="Search your diary/memory for related information about a topic.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for in your memory",
                 },
-                "required": ["chat_id"],
             },
-        ),
-        Tool(
-            name="get_chats",
-            description="List all chats you can write to, with last activity time. Use to decide who to write to proactively.",
-            parameters={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="sleep",
-            description="Start the sleep process. You'll be asked to wrap up before sleeping. After confirming, call set_alarm() to set your wake-up time.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "wake_hour": {
-                        "type": "integer",
-                        "description": "Hour to wake up (0-23, MSK timezone)",
-                    },
-                    "wake_minute": {
-                        "type": "integer",
-                        "description": "Minute to wake up (0-59, default 0)",
-                    },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="wait",
+        description="Wait for the next notification. Use when you have nothing more to do right now.",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="pause",
+        description="Pause and wait for the next event. Same as wait.",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="contacts_get",
+        description="Get info about a contact by chat_id, or list all contacts if no chat_id given.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Chat ID to look up. Omit to list all contacts.",
                 },
-                "required": ["wake_hour"],
             },
-        ),
-        Tool(
-            name="confirm_sleep",
-            description="Confirm you're ready to sleep. This triggers diary consolidation and memory update. Call set_alarm() after this.",
-            parameters={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="set_alarm",
-            description="Set your alarm clock for waking up. Call this after confirm_sleep().",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "wake_hour": {
-                        "type": "integer",
-                        "description": "Hour to wake up (0-23, MSK timezone)",
-                    },
-                    "wake_minute": {
-                        "type": "integer",
-                        "description": "Minute to wake up (0-59, default 0)",
-                    },
+        },
+    ),
+    Tool(
+        name="contacts_update",
+        description="Create or update a contact in your address book. Set a name, description, or tags for a chat_id.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "The chat ID",
                 },
-                "required": ["wake_hour"],
+                "name": {
+                    "type": "string",
+                    "description": "Contact's name/nickname",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Short description of who this person is",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tags like 'friend', 'family', 'work'",
+                },
             },
-        ),
-    ]
+            "required": ["chat_id"],
+        },
+    ),
+    Tool(
+        name="get_chat_context",
+        description="Get recent messages from a chat to understand the conversation context. Use before writing to someone.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Chat ID to get context for",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of recent messages (default 20)",
+                },
+            },
+            "required": ["chat_id"],
+        },
+    ),
+    Tool(
+        name="get_chats",
+        description="List all chats you can write to, with last activity time. Use to decide who to write to proactively.",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="sleep",
+        description="Start the sleep process. You'll be asked to wrap up before sleeping.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "wake_hour": {
+                    "type": "integer",
+                    "description": "Hour to wake up (0-23, MSK timezone)",
+                },
+                "wake_minute": {
+                    "type": "integer",
+                    "description": "Minute to wake up (0-59, default 0)",
+                },
+            },
+            "required": ["wake_hour"],
+        },
+    ),
+]
+
+# ── Контекстные tools (доступны только в определённых mode) ──
+
+_SLEEP_TOOLS: list[Tool] = [
+    Tool(
+        name="confirm_sleep",
+        description="Confirm you're ready to sleep. This triggers diary consolidation and memory update. After this, call set_alarm().",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="set_alarm",
+        description="Set your alarm clock for waking up. Call this after confirm_sleep().",
+        parameters={
+            "type": "object",
+            "properties": {
+                "wake_hour": {
+                    "type": "integer",
+                    "description": "Hour to wake up (0-23, MSK timezone)",
+                },
+                "wake_minute": {
+                    "type": "integer",
+                    "description": "Minute to wake up (0-59, default 0)",
+                },
+            },
+            "required": ["wake_hour"],
+        },
+    ),
+]
+
+_MODE_TOOLS: dict[WorkerMode, list[Tool]] = {
+    WorkerMode.PREPARING_SLEEP: _SLEEP_TOOLS,
+}
+
+
+def build_tools(mode: WorkerMode = WorkerMode.IDLE) -> list[Tool]:
+    """Построить список tool'ов для LLM в зависимости от mode."""
+    tools = list(_BASE_TOOLS)
+    context_tools = _MODE_TOOLS.get(mode, [])
+    tools.extend(context_tools)
+    return tools
+
+
+def get_mode_prompt_extra(mode: WorkerMode) -> str:
+    """Дополнительные инструкции в промпт в зависимости от mode."""
+    if mode == WorkerMode.PREPARING_SLEEP:
+        return (
+            "\n\n[SLEEP MODE] You are preparing to sleep. Before sleeping, you might want to:\n"
+            "- Write to someone (use send_message)\n"
+            "- Write in your diary (use diary_write)\n"
+            "- Say goodnight\n"
+            "When you're ready, call confirm_sleep(). Then call set_alarm() to set your wake-up time."
+        )
+    return ""
 
 
 async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
@@ -561,6 +600,7 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
 async def _tool_sleep(args: dict, ctx: ToolContext) -> str:
     if not ctx.sleep_manager:
         return "Sleep manager not available."
+    ctx.mode = WorkerMode.PREPARING_SLEEP
     wake_hour = args["wake_hour"]
     wake_minute = args.get("wake_minute", 0)
     return await ctx.sleep_manager.start_sleep_process(wake_hour, wake_minute)
@@ -569,6 +609,7 @@ async def _tool_sleep(args: dict, ctx: ToolContext) -> str:
 async def _tool_confirm_sleep(args: dict, ctx: ToolContext) -> str:
     if not ctx.sleep_manager:
         return "Sleep manager not available."
+    ctx.mode = WorkerMode.SLEEPING
     return await ctx.sleep_manager.confirm_sleep()
 
 

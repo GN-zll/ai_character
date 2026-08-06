@@ -41,12 +41,14 @@ class SleepManager:
         diary: Diary,
         llm: LLMProvider,
         working_memory: WorkingMemory,
+        on_wake_callback: object = None,  # Callable[[], None]
     ) -> None:
         self._config = config
         self._nm = notification_manager
         self._diary = diary
         self._llm = llm
         self._working_memory = working_memory
+        self._on_wake_callback = on_wake_callback
 
         self._last_wake_time = datetime.now(timezone.utc)
         self._alarm: datetime | None = None
@@ -180,6 +182,13 @@ class SleepManager:
         self._last_wake_time = datetime.now(timezone.utc)
         alarm = self._alarm
         self._alarm = None
+
+        # Вызываем callback для сброса mode worker'а
+        if self._on_wake_callback:
+            try:
+                self._on_wake_callback()
+            except Exception:
+                logger.exception("Wake callback failed")
 
         msk = _msk_now()
         sleep_duration = ""

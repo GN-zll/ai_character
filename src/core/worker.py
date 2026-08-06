@@ -15,7 +15,7 @@ from src.memory.contacts import Contacts
 from src.memory.chat_history import ChatHistory
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
-from src.core.tools import build_tools, execute_tool, ToolContext
+from src.core.tools import build_tools, execute_tool, ToolContext, WorkerMode, get_mode_prompt_extra
 from src.core.anti_repeat import AntiRepeat
 from src.core.sleep import SleepManager
 
@@ -65,9 +65,19 @@ class Worker:
             max_history=self._config.behavior.anti_repeat_max_history,
         )
 
+        self._mode = WorkerMode.IDLE
         self._temporary_context: list[ChatMessage] = []
         self._task: asyncio.Task | None = None
         self._running = False
+
+    @property
+    def mode(self) -> WorkerMode:
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: WorkerMode) -> None:
+        logger.info("Worker %s mode: %s → %s", self._name, self._mode.value, value.value)
+        self._mode = value
 
     def start(self) -> None:
         """Запустить worker в фоновой задаче."""
@@ -100,6 +110,16 @@ class Worker:
 
     async def _handle_notification(self, notification: Notification) -> None:
         """Обработать одну нотификацию."""
+        # Если спим — пропускаем (кроме alarm wake-up)
+        if self._mode == WorkerMode.SLEEPING:
+            if notification.metadata.get("source") != "alarm_wake_up":
+                logger.debug("Worker %s is sleeping, ignoring notification", self._name)
+                return
+            else:
+                # Проснулись!
+                self._mode = WorkerMode.IDLE
+                logger.info("Worker %s woke up!", self._name)
+
         logger.info("Worker %s processing: %s", self._name, notification.message[:200])
 
         # Добавляем входящее в контекст
@@ -111,15 +131,16 @@ class Worker:
         # Diary lookup — ищем связанные записи
         diary_context = await self._lookup_diary()
 
-        # Собираем system prompt
+        # Собираем system prompt + mode-specific инструкции
         system_prompt = self._personality.get_system_prompt(
             working_memory=self._working_memory.get(),
             diary_entries=diary_context,
             contacts=self._contacts.format_for_prompt(),
         )
+        system_prompt += get_mode_prompt_extra(self._mode)
 
-        # Tool'ы для LLM
-        tools = build_tools()
+        # Tool'ы для LLM (зависят от mode)
+        tools = build_tools(self._mode)
         tool_ctx = ToolContext(
             client=self._client,
             diary=self._diary,
@@ -132,6 +153,7 @@ class Worker:
             temporary_context=self._temporary_context,
             anti_repeat=self._anti_repeat,
             sleep_manager=self._sleep_manager,
+            mode=self._mode,
         )
 
         # Цикл LLM с tool calls (как в kuni)
@@ -194,6 +216,10 @@ class Worker:
                     content=result,
                     tool_call_id=tc.id,
                 ))
+
+                # Синхронизируем mode (мог измениться в execute_tool)
+                if tool_ctx.mode != self._mode:
+                    self._mode = tool_ctx.mode
 
                 if tc.name in ("wait", "pause"):
                     should_break = True

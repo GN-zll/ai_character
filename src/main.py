@@ -54,6 +54,14 @@ async def main() -> None:
             tags=["owner"],
         )
 
+    sleep_manager = SleepManager(
+        config=config,
+        notification_manager=notification_manager,
+        diary=diary,
+        llm=llm,
+        working_memory=working_memory,
+    )
+
     worker = Worker(
         name="main",
         config=config,
@@ -69,19 +77,15 @@ async def main() -> None:
         sleep_manager=sleep_manager,
     )
 
+    # Callback: когда alarm срабатывает → сбрасываем mode worker'а в IDLE
+    from src.core.tools import WorkerMode
+    sleep_manager._on_wake_callback = lambda: setattr(worker, '_mode', WorkerMode.IDLE)
+
     proactive = ProactiveScheduler(
         config=config,
         notification_manager=notification_manager,
         diary=diary,
         llm=llm,
-    )
-
-    sleep_manager = SleepManager(
-        config=config,
-        notification_manager=notification_manager,
-        diary=diary,
-        llm=llm,
-        working_memory=working_memory,
     )
 
     batcher = MessageBatcher(
