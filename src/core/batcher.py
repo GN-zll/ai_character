@@ -4,7 +4,7 @@ import asyncio
 import logging
 import random
 
-from src.client.base import BaseTelegramClient, IncomingMessage
+from src.client.base import IncomingMessage
 from src.core.notification import Notification, NotificationManager
 
 logger = logging.getLogger(__name__)
@@ -16,16 +16,13 @@ class MessageBatcher:
     Логика (kuni-style):
     1. Сообщение приходит → miss_chance (5% пропустить)
     2. Thinking delay (1-3 сек) — "думает"
-    3. Typing ON
-    4. Batch window (2-5 сек) — собирает сообщения
-    5. Typing OFF
-    6. Notification с ВСЕМИ сообщениями → Worker
+    3. Batch window (2-5 сек) — собирает сообщения
+    4. Notification с ВСЕМИ сообщениями → Worker
     """
 
     def __init__(
         self,
         notification_manager: NotificationManager,
-        client: BaseTelegramClient,
         *,
         miss_chance: float = 0.05,
         thinking_delay_min: float = 1.0,
@@ -35,7 +32,6 @@ class MessageBatcher:
         preview_length: int = 10,
     ) -> None:
         self._nm = notification_manager
-        self._client = client
         self._miss_chance = miss_chance
         self._thinking_delay_min = thinking_delay_min
         self._thinking_delay_max = thinking_delay_max
@@ -82,12 +78,6 @@ class MessageBatcher:
             )
             logger.debug("Thinking delay: %.1fs for chat %s", thinking_delay, chat_id)
             await asyncio.sleep(thinking_delay)
-
-            # Typing ON
-            try:
-                await self._client.send_chat_action(chat_id, "typing")
-            except Exception:
-                logger.debug("Failed to send typing to chat %s", chat_id)
 
             # Batch window (2-5 сек) — собираем ещё сообщения
             batch_window = random.uniform(

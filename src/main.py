@@ -103,7 +103,6 @@ async def main() -> None:
 
     batcher = MessageBatcher(
         notification_manager=notification_manager,
-        client=client,
         miss_chance=config.behavior.miss_notification_chance,
         thinking_delay_min=config.behavior.thinking_delay_min,
         thinking_delay_max=config.behavior.thinking_delay_max,
