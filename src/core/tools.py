@@ -394,7 +394,7 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
                     await ctx.anti_repeat.record(chat_id, line)
                 # Auto-correct если была опечатка
                 if had_typo and i < len(original_lines):
-                    correct_text = original_lines[i] if i < len(original_lines) else line
+                    correct_text = original_lines[i]
                     if correct_text != line:
                         await _maybe_auto_correct(ctx, chat_id, sent.message_id, correct_text)
             return _build_send_result(ctx, chat_id, len(lines))
@@ -512,6 +512,7 @@ async def _schedule_auto_correct(
     client, chat_id: int, message_id: int, original_text: str, config
 ) -> None:
     """Через случайную задержку отредактировать сообщение (если была опечатка)."""
+    from src.config import BehaviorConfig
     cfg = config.behavior if config else BehaviorConfig()
     delay = random.uniform(cfg.typo_correct_delay_min, cfg.typo_correct_delay_max)
     logger.debug("Auto-correct scheduled in %.0fs for message %d", delay, message_id)
@@ -603,7 +604,24 @@ def _tool_contacts_get(args: dict, ctx: ToolContext) -> str:
         contact = ctx.contacts.get(chat_id)
         if not contact:
             return f"No contact found for chat_id={chat_id}."
-        return f"Contact: id={contact.chat_id}, name={contact.name}, description={contact.description}, tags={contact.tags}"
+
+        parts = [f"Contact: id={contact.chat_id}, name={contact.name}"]
+        if contact.description:
+            parts.append(f"description: {contact.description}")
+        if contact.tags:
+            parts.append(f"tags: {', '.join(contact.tags)}")
+
+        # Relationship stats
+        if contact.stats and any(v != 0 for v in contact.stats.values()):
+            stat_parts = []
+            for stat_name, value in contact.stats.items():
+                label = ctx.contacts.get_stat_level(stat_name, value)
+                stat_parts.append(f"  {stat_name}: {value:+d} {label}")
+            parts.append("relationship:\n" + "\n".join(stat_parts))
+        if contact.summary:
+            parts.append(f"summary: {contact.summary}")
+
+        return "\n".join(parts)
 
     # List all
     contacts = ctx.contacts.list_all()
@@ -617,6 +635,16 @@ def _tool_contacts_get(args: dict, ctx: ToolContext) -> str:
             line += f" — {c.description}"
         if c.tags:
             line += f" [{', '.join(c.tags)}]"
+        # Show stats if non-zero
+        stat_parts = []
+        for stat_name, value in c.stats.items():
+            if value != 0:
+                label = ctx.contacts.get_stat_level(stat_name, value)
+                stat_parts.append(f"{stat_name}={value:+d}({label})")
+        if stat_parts:
+            line += f" | {', '.join(stat_parts)}"
+        if c.summary:
+            line += f" [{c.summary}]"
         lines.append(line)
     return "Contacts:\n" + "\n".join(lines)
 

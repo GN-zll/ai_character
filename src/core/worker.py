@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
-from datetime import datetime, timezone
 
 from src.client.base import BaseTelegramClient
-from src.llm.provider import LLMProvider, ChatMessage, ToolCall
+from src.llm.provider import LLMProvider, ChatMessage
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory

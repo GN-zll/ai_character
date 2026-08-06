@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from dataclasses import dataclass
 
 from src.client.base import IncomingMessage
 from src.core.notification import Notification, NotificationManager

@@ -13,7 +13,7 @@ from src.memory.working_memory import WorkingMemory
 from src.memory.contacts import Contacts
 from src.memory.chat_history import ChatHistory
 from src.character.personality import Personality
-from src.core.notification import Notification, NotificationManager
+from src.core.notification import NotificationManager
 from src.core.worker import Worker
 from src.core.proactive import ProactiveScheduler
 from src.core.batcher import MessageBatcher
