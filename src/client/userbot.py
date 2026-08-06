@@ -89,6 +89,9 @@ class UserbotClient(BaseTelegramClient):
     async def edit_message(self, chat_id: int | str, message_id: int, new_text: str) -> None:
         await self._client.edit_message(chat_id, message_id, new_text)
 
+    async def mark_read(self, chat_id: int | str) -> None:
+        await self._client.send_read_acknowledge(chat_id)
+
     # ── Обработка входящих ─────────────────────────────────────
 
     async def start_listening(self) -> None:

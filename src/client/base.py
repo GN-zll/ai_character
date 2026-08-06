@@ -100,6 +100,11 @@ class BaseTelegramClient(ABC):
         """Редактировать ранее отправленное сообщение."""
         ...
 
+    @abstractmethod
+    async def mark_read(self, chat_id: int | str) -> None:
+        """Пометить сообщения в чате как прочитанные."""
+        ...
+
     # ── Обработка входящих ─────────────────────────────────────
 
     def on_new_message(self) -> Callable:

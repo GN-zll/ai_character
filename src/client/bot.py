@@ -113,6 +113,10 @@ class BotClient(BaseTelegramClient):
         assert self._bot is not None
         await self._bot.edit_message_text(chat_id=int(chat_id), message_id=message_id, text=new_text)
 
+    async def mark_read(self, chat_id: int | str) -> None:
+        # Bot API не поддерживает mark_read — это просто заглушка
+        logger.debug("mark_read called for chat %s (Bot API: no-op)", chat_id)
+
     # ── Обработка входящих ─────────────────────────────────────
 
     async def start_listening(self) -> None:

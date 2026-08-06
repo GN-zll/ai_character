@@ -189,6 +189,24 @@ _BASE_TOOLS: list[Tool] = [
         parameters={"type": "object", "properties": {}},
     ),
     Tool(
+        name="open_chat",
+        description="Open a chat and read all unread messages. Shows full conversation context. Call this before responding to understand what was said.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Chat ID to open and read",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max messages to load (default 20)",
+                },
+            },
+            "required": ["chat_id"],
+        },
+    ),
+    Tool(
         name="reflect_mood",
         description="Reflect on how recent events affected your mood. Updates your emotional state.",
         parameters={
@@ -340,6 +358,8 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_get_chat_context(args, ctx)
         elif name == "get_chats":
             return _tool_get_chats(args, ctx)
+        elif name == "open_chat":
+            return await _tool_open_chat(args, ctx)
         elif name == "reflect_mood":
             return await _tool_reflect_mood(args, ctx)
         elif name == "update_relationship":
@@ -715,6 +735,36 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
         desc = f" — {contact.description}" if contact and contact.description else ""
         lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
     return "Chats:\n" + "\n".join(lines)
+
+
+async def _tool_open_chat(args: dict, ctx: ToolContext) -> str:
+    """Открыть чат и прочитать все непрочитанные сообщения."""
+    chat_id = args["chat_id"]
+    limit = args.get("limit", 20)
+
+    # Загружаем последние сообщения из истории
+    if ctx.chat_history:
+        messages = ctx.chat_history.get_messages(chat_id, limit=limit)
+    else:
+        messages = []
+
+    if not messages:
+        return f"No messages found in chat {chat_id}. Nothing to read."
+
+    # Помечаем чат прочитанным
+    if ctx.client:
+        try:
+            await ctx.client.mark_read(chat_id)
+        except Exception:
+            logger.debug("Failed to mark_read for chat %s", chat_id)
+
+    # Формируем контекст
+    lines = []
+    for m in messages:
+        role = "me" if m.is_outgoing else m.sender_name
+        lines.append(f"[id={m.message_id} {role}]: {m.text}")
+
+    return f"Opened chat {chat_id} ({len(messages)} messages loaded):\n" + "\n".join(lines)
 
 
 async def _tool_reflect_mood(args: dict, ctx: ToolContext) -> str:

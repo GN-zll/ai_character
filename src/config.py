@@ -68,6 +68,12 @@ class BehaviorConfig:
     random_sleep_chance: float = 0.01
     random_sleep_min: int = 15
     random_sleep_max: int = 120
+    miss_notification_chance: float = 0.05
+    notification_preview_length: int = 10
+    thinking_delay_min: float = 1.0
+    thinking_delay_max: float = 3.0
+    batch_window_min: float = 2.0
+    batch_window_max: float = 5.0
 
 
 @dataclass

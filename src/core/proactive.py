@@ -7,6 +7,7 @@ import random
 from src.config import Config
 from src.core.notification import Notification, NotificationManager
 from src.memory.diary import Diary
+from src.memory.contacts import Contacts
 from src.llm.provider import LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,13 @@ class ProactiveScheduler:
         notification_manager: NotificationManager,
         diary: Diary,
         llm: LLMProvider,
+        contacts: Contacts | None = None,
     ) -> None:
         self._config = config
         self._nm = notification_manager
         self._diary = diary
         self._llm = llm
+        self._contacts = contacts
 
         self._task: asyncio.Task | None = None
         self._running = False
@@ -69,9 +72,31 @@ class ProactiveScheduler:
     async def _act_proactively(self) -> None:
         """Создать proactive нотификацию (kuni-style).
 
-        Берём случайную запись из дневника, оборачиваем в промпт.
-        LLM сама решает: порефлексировать, написать кому-то и т.д.
+        1. Проверяем есть ли непрочитанные сообщения
+        2. Если нет — берём запись из дневника для рефлексии
         """
+        # Проверяем контакты с ненулевыми статами для outreach
+        if self._contacts:
+            candidates = self._contacts.get_changed_contacts()
+            if candidates:
+                # Выбираем контакт с наибольшей давностью общения
+                import random as _random
+                contact = _random.choice(candidates)
+                await self._nm.push(Notification(
+                    priority=5,
+                    message=(
+                        f"You haven't talked to {contact.name} in a while.\n"
+                        f"Use get_chats() to see who you can write to, "
+                        f"and get_chat_context() to read recent messages.\n"
+                        f"Think about writing to {contact.name}!"
+                    ),
+                    pin="<act_proactively />",
+                    metadata={"source": "proactive_outreach", "target_chat_id": contact.chat_id},
+                ))
+                logger.info("Proactive outreach to %s", contact.name)
+                return
+
+        # Обычная proactive логика — diary entry
         entry = self._diary.random_entry()
         if not entry:
             logger.debug("Proactive: no diary entries, skipping")
@@ -92,6 +117,6 @@ class ProactiveScheduler:
             priority=0,
             message=prompt,
             pin="<act_proactively />",
-            metadata={"source": "proactive"},
+            metadata={"source": "proactive_reflection"},
         ))
-        logger.info("Proactive notification pushed: %s", entry.text[:80])
+        logger.info("Proactive reflection: %s", entry.text[:80])

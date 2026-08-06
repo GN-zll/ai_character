@@ -95,12 +95,18 @@ async def main() -> None:
         notification_manager=notification_manager,
         diary=diary,
         llm=llm,
+        contacts=contacts,
     )
 
     batcher = MessageBatcher(
-        notification_manager,
-        min_delay=config.behavior.batch_delay_min,
-        max_delay=config.behavior.batch_delay_max,
+        notification_manager=notification_manager,
+        client=client,
+        miss_chance=config.behavior.miss_notification_chance,
+        thinking_delay_min=config.behavior.thinking_delay_min,
+        thinking_delay_max=config.behavior.thinking_delay_max,
+        batch_window_min=config.behavior.batch_window_min,
+        batch_window_max=config.behavior.batch_window_max,
+        preview_length=config.behavior.notification_preview_length,
     )
 
     # ── Message handler → history + batcher ───────────────────
