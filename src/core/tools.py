@@ -210,6 +210,9 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
         # Typing simulation delay (имитация набора текста)
         await _simulate_typing_delay(text, ctx.config)
 
+        # Typo simulation (имитация опечаток)
+        text = _apply_typos(text)
+
         # Разбиваем многострочные сообщения
         lines = [l for l in text.split("\n") if l.strip()]
         if len(lines) > 1:
@@ -281,6 +284,39 @@ async def _simulate_typing_delay(text: str, config=None) -> None:
     delay = max(delay, cfg.typing_min_delay)
     logger.debug("Typing delay: %.1fs for %d chars", delay, len(text))
     await asyncio.sleep(delay)
+
+
+KEYBOARD_NEIGHBORS = {
+    'q': 'wa', 'w': 'qeas', 'e': 'wrds', 'r': 'etfds', 't': 'ryghs', 'y': 'tughj',
+    'u': 'yihjk', 'i': 'uojkl', 'o': 'iplk', 'p': 'ol',
+    'a': 'qwsz', 's': 'awedxz', 'd': 'serfcx', 'f': 'drtgvc', 'g': 'ftyhbv',
+    'h': 'gyujnb', 'j': 'huiknm', 'k': 'jiolm', 'l': 'kop',
+    'z': 'asx', 'x': 'zsdc', 'c': 'xdfv', 'v': 'cfgb', 'b': 'vghn', 'n': 'bhjm', 'm': 'njk',
+}
+
+
+def _apply_typos(text: str) -> str:
+    """Случайные опечатки: swap соседних букв или замена на соседнюю клавишу."""
+    if len(text) < 3:
+        return text
+
+    result = list(text)
+
+    # 2% шанс: swap двух соседних символов
+    if random.random() < 0.02:
+        idx = random.randint(0, len(result) - 2)
+        result[idx], result[idx + 1] = result[idx + 1], result[idx]
+
+    # 2% шанс: замена на соседнюю клавишу
+    if random.random() < 0.02:
+        idx = random.randint(0, len(result) - 1)
+        char = result[idx].lower()
+        if char in KEYBOARD_NEIGHBORS:
+            neighbors = KEYBOARD_NEIGHBORS[char]
+            replacement = random.choice(neighbors)
+            result[idx] = replacement if result[idx].islower() else replacement.upper()
+
+    return "".join(result)
 
 
 async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
