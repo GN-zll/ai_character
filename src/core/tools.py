@@ -165,30 +165,45 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
     chat_id = args["chat_id"]
     text = args["text"]
 
-    # Typing simulation delay (имитация набора текста)
-    await _simulate_typing_delay(text)
+    # Запускаем фоновый typing indicator (каждые 4 сек)
+    typing_stop = asyncio.Event()
+    typing_task = asyncio.create_task(_typing_loop(ctx.client, chat_id, typing_stop))
 
-    # Typing indicator
     try:
-        await ctx.client.send_chat_action(chat_id, "typing")
-    except Exception:
-        pass  # не критично
+        # Typing simulation delay (имитация набора текста)
+        await _simulate_typing_delay(text)
 
-    # Разбиваем многострочные сообщения
-    lines = [l for l in text.split("\n") if l.strip()]
-    if len(lines) > 1:
-        for i, line in enumerate(lines):
-            if i > 0:
-                await _simulate_typing_delay(line)
-                try:
-                    await ctx.client.send_chat_action(chat_id, "typing")
-                except Exception:
-                    pass
-            await ctx.client.send_message(chat_id, line)
-        return f"Sent {len(lines)} messages to {chat_id}."
-    else:
-        await ctx.client.send_message(chat_id, text)
-        return f"Message sent to {chat_id}."
+        # Разбиваем многострочные сообщения
+        lines = [l for l in text.split("\n") if l.strip()]
+        if len(lines) > 1:
+            for i, line in enumerate(lines):
+                if i > 0:
+                    await _simulate_typing_delay(line)
+                await ctx.client.send_message(chat_id, line)
+            return f"Sent {len(lines)} messages to {chat_id}."
+        else:
+            await ctx.client.send_message(chat_id, text)
+            return f"Message sent to {chat_id}."
+    finally:
+        # Останавливаем typing indicator
+        typing_stop.set()
+        try:
+            await typing_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _typing_loop(client, chat_id: int, stop: asyncio.Event) -> None:
+    """Посылает typing indicator каждые 4 сек, пока не вызван stop."""
+    try:
+        while not stop.is_set():
+            try:
+                await client.send_chat_action(chat_id, "typing")
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
 
 
 async def _simulate_typing_delay(text: str) -> None:
