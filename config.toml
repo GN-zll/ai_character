@@ -22,8 +22,8 @@ history_db = "data/history.db"
 history_max_per_chat = 1000
 
 [behavior]
-proactive_interval_min = 1
-proactive_chance = 1
+proactive_interval_min = 27
+proactive_chance = 0.5
 batch_delay_min = 0.0
 batch_delay_max = 5.0
 diary_token_trigger = 20000

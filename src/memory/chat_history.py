@@ -104,6 +104,24 @@ class ChatHistory:
             ))
         return messages
 
+    def get_message_by_id(self, chat_id: int, message_id: int) -> ChatMessage | None:
+        """Получить конкретное сообщение по ID."""
+        row = self._conn.execute(
+            "SELECT message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "FROM messages WHERE chat_id = ? AND message_id = ?",
+            (chat_id, message_id),
+        ).fetchone()
+        if not row:
+            return None
+        return ChatMessage(
+            message_id=row[0],
+            sender_id=row[1],
+            sender_name=row[2],
+            text=row[3],
+            timestamp=datetime.fromtimestamp(row[4], tz=timezone.utc),
+            is_outgoing=bool(row[5]),
+        )
+
     def get_last_activity(self, chat_id: int) -> datetime | None:
         """Получить время последнего сообщения в чате."""
         row = self._conn.execute(

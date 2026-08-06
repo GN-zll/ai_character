@@ -77,9 +77,15 @@ class MessageBatcher:
         """Форматировать пачку сообщений в один текст."""
         if len(messages) == 1:
             msg = messages[0]
-            return f"New message from {msg.sender_name} (chat_id={msg.chat_id}): {msg.text}"
+            text = f"New message from {msg.sender_name} (chat_id={msg.chat_id}): {msg.text}"
+            if msg.reply_to_text:
+                text = f"New message from {msg.sender_name} (chat_id={msg.chat_id}, replying to '{msg.reply_to_text}'): {msg.text}"
+            return text
 
         lines = [f"New messages from {messages[0].sender_name} (chat_id={messages[0].chat_id}):"]
         for msg in messages:
-            lines.append(f"- {msg.text}")
+            if msg.reply_to_text:
+                lines.append(f"- (replying to '{msg.reply_to_text}') {msg.text}")
+            else:
+                lines.append(f"- {msg.text}")
         return "\n".join(lines)

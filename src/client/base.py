@@ -20,6 +20,7 @@ class IncomingMessage:
     date: object  # datetime
     is_outgoing: bool = False
     reply_to: int | None = None
+    reply_to_text: str | None = None  # текст оригинального сообщения (для reply)
     raw: object = None  # оригинальный объект сообщения
 
 

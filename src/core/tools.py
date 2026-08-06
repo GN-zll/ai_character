@@ -52,6 +52,10 @@ def build_tools() -> list[Tool]:
                         "type": "string",
                         "description": "The message text to send",
                     },
+                    "reply_to_message_id": {
+                        "type": "integer",
+                        "description": "Message ID to reply to (from get_chat_context). Omit if not replying.",
+                    },
                 },
                 "required": ["chat_id", "text"],
             },
@@ -194,8 +198,9 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
 async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
     chat_id = args["chat_id"]
     text = args["text"]
+    reply_to = args.get("reply_to_message_id")
 
-    # Запускаем фоновый typing indicator (каждые 4 сек)
+    # Запускаем фоновый typing indicator (каждые 3 сек)
     typing_stop = asyncio.Event()
     typing_task = asyncio.create_task(_typing_loop(ctx.client, chat_id, typing_stop))
 
@@ -209,11 +214,12 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
             for i, line in enumerate(lines):
                 if i > 0:
                     await _simulate_typing_delay(line)
-                sent = await ctx.client.send_message(chat_id, line)
+                    reply_to = None  # reply only to first message
+                sent = await ctx.client.send_message(chat_id, line, reply_to=reply_to)
                 _save_outgoing(ctx, chat_id, sent.message_id, line)
             return f"Sent {len(lines)} messages to {chat_id}."
         else:
-            sent = await ctx.client.send_message(chat_id, text)
+            sent = await ctx.client.send_message(chat_id, text, reply_to=reply_to)
             _save_outgoing(ctx, chat_id, sent.message_id, text)
             return f"Message sent to {chat_id}."
     finally:
@@ -368,7 +374,7 @@ def _tool_get_chat_context(args: dict, ctx: ToolContext) -> str:
     lines = []
     for m in messages:
         role = "me" if m.is_outgoing else m.sender_name
-        lines.append(f"[{role}]: {m.text}")
+        lines.append(f"[id={m.message_id} {role}]: {m.text}")
     return "\n".join(lines)
 
 

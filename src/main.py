@@ -101,6 +101,12 @@ async def main() -> None:
                 is_outgoing=msg.is_outgoing,
             )
 
+        # Reply context: ищем оригинал сообщения
+        if msg.reply_to and not msg.reply_to_text:
+            original = chat_history.get_message_by_id(msg.chat_id, msg.reply_to)
+            if original:
+                msg.reply_to_text = original.text
+
         # Отправляем в batcher
         if msg.text and not msg.is_outgoing:
             await batcher.add(msg)
