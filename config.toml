@@ -32,6 +32,8 @@ typing_wpm_min = 30           # мин символов в минуту (мед�
 typing_wpm_max = 200           # макс символов в минуту
 typing_min_delay = 2.0         # мин задержка перед отправкой (сек)
 typing_max_delay = 15.0        # макс задержка перед отправкой (сек)
+follow_up_chance = 0.3         # шанс отправить follow-up сообщение (0.0-1.0)
+follow_up_max = 3              # максимум follow-up сообщений подряд
 
 [night]
 enabled = true

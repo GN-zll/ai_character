@@ -33,6 +33,7 @@ class ToolContext:
     llm: object = None  # LLMProvider (avoid circular import)
     config: object = None  # Config
     temporary_context: list = field(default_factory=list)
+    messages_in_a_row: int = field(default=0)
 
 
 def build_tools() -> list[Tool]:
@@ -179,6 +180,7 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
         elif name == "ask":
             return await _tool_ask(args, ctx)
         elif name in ("wait", "pause"):
+            ctx.messages_in_a_row = 0
             return "Waiting for next notification."
         elif name == "contacts_get":
             return _tool_contacts_get(args, ctx)
@@ -217,11 +219,11 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
                     reply_to = None  # reply only to first message
                 sent = await ctx.client.send_message(chat_id, line, reply_to=reply_to)
                 _save_outgoing(ctx, chat_id, sent.message_id, line)
-            return f"Sent {len(lines)} messages to {chat_id}."
+            return _build_send_result(ctx, chat_id, len(lines))
         else:
             sent = await ctx.client.send_message(chat_id, text, reply_to=reply_to)
             _save_outgoing(ctx, chat_id, sent.message_id, text)
-            return f"Message sent to {chat_id}."
+            return _build_send_result(ctx, chat_id, 1)
     finally:
         # Останавливаем typing indicator
         typing_stop.set()
@@ -229,6 +231,27 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
             await typing_task
         except asyncio.CancelledError:
             pass
+
+
+def _build_send_result(ctx: ToolContext, chat_id: int, count: int) -> str:
+    """Построить результат отправки с follow-up промптом."""
+    ctx.messages_in_a_row += count
+    result = f"Sent {count} message(s) to {chat_id}."
+
+    # Follow-up: шанс отправить ещё одно сообщение
+    if ctx.config:
+        chance = ctx.config.behavior.follow_up_chance
+        max_count = ctx.config.behavior.follow_up_max
+    else:
+        chance = 0.3
+        max_count = 3
+
+    if ctx.messages_in_a_row < max_count and random.random() < chance:
+        result += "\n\nYou should add a follow-up #send_telegram_message."
+    elif ctx.messages_in_a_row >= max_count:
+        result += f"\n\nWarning: you have sent {ctx.messages_in_a_row} messages in a row! Give your participant space to breathe!"
+
+    return result
 
 
 async def _typing_loop(client, chat_id: int, stop: asyncio.Event) -> None:

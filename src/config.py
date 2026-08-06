@@ -54,6 +54,8 @@ class BehaviorConfig:
     typing_wpm_max: int = 300
     typing_min_delay: float = 2.0
     typing_max_delay: float = 15.0
+    follow_up_chance: float = 0.3
+    follow_up_max: int = 3
 
 
 @dataclass
