@@ -58,6 +58,11 @@ class BehaviorConfig:
     follow_up_max: int = 3
     anti_repeat_threshold: float = 0.75
     anti_repeat_max_history: int = 20
+    typo_swap_chance: float = 0.02
+    typo_neighbor_chance: float = 0.02
+    typo_correct_chance: float = 0.57
+    typo_correct_delay_min: float = 15.0
+    typo_correct_delay_max: float = 45.0
 
 
 @dataclass

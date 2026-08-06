@@ -165,28 +165,6 @@ def build_tools() -> list[Tool]:
             parameters={"type": "object", "properties": {}},
         ),
         Tool(
-            name="edit_message",
-            description="Edit a previously sent message. Use to fix typos or add information.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "chat_id": {
-                        "type": "integer",
-                        "description": "Chat ID where the message was sent",
-                    },
-                    "message_id": {
-                        "type": "integer",
-                        "description": "Message ID to edit",
-                    },
-                    "new_text": {
-                        "type": "string",
-                        "description": "New text for the message",
-                    },
-                },
-                "required": ["chat_id", "message_id", "new_text"],
-            },
-        ),
-        Tool(
             name="sleep",
             description="Start the sleep process. You'll be asked to wrap up before sleeping. After confirming, call set_alarm() to set your wake-up time.",
             parameters={
@@ -255,8 +233,6 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_get_chat_context(args, ctx)
         elif name == "get_chats":
             return _tool_get_chats(args, ctx)
-        elif name == "edit_message":
-            return await _tool_edit_message(args, ctx)
         elif name == "sleep":
             return await _tool_sleep(args, ctx)
         elif name == "confirm_sleep":
@@ -290,10 +266,12 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
         await _simulate_typing_delay(text, ctx.config)
 
         # Typo simulation (имитация опечаток)
-        text = _apply_typos(text)
+        original_text = text
+        text, had_typo = _apply_typos(text, ctx.config)
 
         # Разбиваем многострочные сообщения
         lines = [l for l in text.split("\n") if l.strip()]
+        original_lines = [l for l in original_text.split("\n") if l.strip()]
         if len(lines) > 1:
             for i, line in enumerate(lines):
                 if i > 0:
@@ -303,12 +281,20 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
                 _save_outgoing(ctx, chat_id, sent.message_id, line)
                 if ctx.anti_repeat:
                     await ctx.anti_repeat.record(chat_id, line)
+                # Auto-correct если была опечатка
+                if had_typo and i < len(original_lines):
+                    correct_text = original_lines[i] if i < len(original_lines) else line
+                    if correct_text != line:
+                        await _maybe_auto_correct(ctx, chat_id, sent.message_id, correct_text)
             return _build_send_result(ctx, chat_id, len(lines))
         else:
             sent = await ctx.client.send_message(chat_id, text, reply_to=reply_to)
             _save_outgoing(ctx, chat_id, sent.message_id, text)
             if ctx.anti_repeat:
                 await ctx.anti_repeat.record(chat_id, text)
+            # Auto-correct если была опечатка
+            if had_typo and original_text != text:
+                await _maybe_auto_correct(ctx, chat_id, sent.message_id, original_text)
             return _build_send_result(ctx, chat_id, 1)
     finally:
         # Останавливаем typing indicator
@@ -378,28 +364,59 @@ KEYBOARD_NEIGHBORS = {
 }
 
 
-def _apply_typos(text: str) -> str:
-    """Случайные опечатки: swap соседних букв или замена на соседнюю клавишу."""
+def _apply_typos(text: str, config=None) -> tuple[str, bool]:
+    """Случайные опечатки: swap соседних букв или замена на соседнюю клавишу.
+
+    Returns: (processed_text, had_typo)
+    """
+    from src.config import BehaviorConfig
+    cfg = config.behavior if config else BehaviorConfig()
+
     if len(text) < 3:
-        return text
+        return text, False
 
     result = list(text)
+    had_typo = False
 
-    # 2% шанс: swap двух соседних символов
-    if random.random() < 0.02:
+    # Шанс: swap двух соседних символов
+    if random.random() < cfg.typo_swap_chance:
         idx = random.randint(0, len(result) - 2)
         result[idx], result[idx + 1] = result[idx + 1], result[idx]
+        had_typo = True
 
-    # 2% шанс: замена на соседнюю клавишу
-    if random.random() < 0.02:
+    # Шанс: замена на соседнюю клавишу
+    if random.random() < cfg.typo_neighbor_chance:
         idx = random.randint(0, len(result) - 1)
         char = result[idx].lower()
         if char in KEYBOARD_NEIGHBORS:
             neighbors = KEYBOARD_NEIGHBORS[char]
             replacement = random.choice(neighbors)
             result[idx] = replacement if result[idx].islower() else replacement.upper()
+            had_typo = True
 
-    return "".join(result)
+    return "".join(result), had_typo
+
+
+async def _schedule_auto_correct(
+    client, chat_id: int, message_id: int, original_text: str, config
+) -> None:
+    """Через случайную задержку отредактировать сообщение (если была опечатка)."""
+    cfg = config.behavior if config else BehaviorConfig()
+    delay = random.uniform(cfg.typo_correct_delay_min, cfg.typo_correct_delay_max)
+    logger.debug("Auto-correct scheduled in %.0fs for message %d", delay, message_id)
+    await asyncio.sleep(delay)
+    try:
+        await client.edit_message(chat_id, message_id, original_text)
+        logger.info("Auto-corrected message %d in chat %d", message_id, chat_id)
+    except Exception:
+        logger.exception("Auto-correct failed for message %d", message_id)
+
+
+async def _maybe_auto_correct(ctx: ToolContext, chat_id: int, message_id: int, correct_text: str) -> None:
+    """С шансом запланировать автокоррекцию опечатки."""
+    cfg = ctx.config.behavior if ctx.config else BehaviorConfig()
+    if random.random() < cfg.typo_correct_chance:
+        asyncio.create_task(_schedule_auto_correct(ctx.client, chat_id, message_id, correct_text, ctx.config))
 
 
 async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
@@ -539,16 +556,6 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
         lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
     return "Chats:\n" + "\n".join(lines)
 
-
-async def _tool_edit_message(args: dict, ctx: ToolContext) -> str:
-    chat_id = args["chat_id"]
-    message_id = args["message_id"]
-    new_text = args["new_text"]
-    try:
-        await ctx.client.edit_message(chat_id, message_id, new_text)
-        return f"Message {message_id} in chat {chat_id} edited."
-    except Exception as e:
-        return f"Failed to edit message: {e}"
 
 
 async def _tool_sleep(args: dict, ctx: ToolContext) -> str:

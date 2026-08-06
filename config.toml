@@ -36,6 +36,11 @@ follow_up_chance = 0.3         # шанс отправить follow-up сооб�
 follow_up_max = 3              # максимум follow-up сообщений подряд
 anti_repeat_threshold = 0.75   # порог similarity для anti-repeat (0.0-1.0)
 anti_repeat_max_history = 20   # сколько последних ответов хранить
+typo_swap_chance = 0.02        # шанс swap соседних символов (0.0-1.0)
+typo_neighbor_chance = 0.02    # шанс замены на соседнюю клавишу (0.0-1.0)
+typo_correct_chance = 0.57     # шанс автокоррекции опечатки (0.0-1.0)
+typo_correct_delay_min = 15.0  # мин задержка перед автокоррекцией (сек)
+typo_correct_delay_max = 45.0  # макс задержка перед автокоррекцией (сек)
 
 [night]
 enabled = true
