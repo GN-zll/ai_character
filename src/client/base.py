@@ -95,6 +95,11 @@ class BaseTelegramClient(ABC):
         """
         ...
 
+    @abstractmethod
+    async def edit_message(self, chat_id: int | str, message_id: int, new_text: str) -> None:
+        """Редактировать ранее отправленное сообщение."""
+        ...
+
     # ── Обработка входящих ─────────────────────────────────────
 
     def on_new_message(self) -> Callable:

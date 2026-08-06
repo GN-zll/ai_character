@@ -165,6 +165,28 @@ def build_tools() -> list[Tool]:
             parameters={"type": "object", "properties": {}},
         ),
         Tool(
+            name="edit_message",
+            description="Edit a previously sent message. Use to fix typos or add information.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "chat_id": {
+                        "type": "integer",
+                        "description": "Chat ID where the message was sent",
+                    },
+                    "message_id": {
+                        "type": "integer",
+                        "description": "Message ID to edit",
+                    },
+                    "new_text": {
+                        "type": "string",
+                        "description": "New text for the message",
+                    },
+                },
+                "required": ["chat_id", "message_id", "new_text"],
+            },
+        ),
+        Tool(
             name="sleep",
             description="Start the sleep process. You'll be asked to wrap up before sleeping. After confirming, call set_alarm() to set your wake-up time.",
             parameters={
@@ -233,6 +255,8 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_get_chat_context(args, ctx)
         elif name == "get_chats":
             return _tool_get_chats(args, ctx)
+        elif name == "edit_message":
+            return await _tool_edit_message(args, ctx)
         elif name == "sleep":
             return await _tool_sleep(args, ctx)
         elif name == "confirm_sleep":
@@ -514,6 +538,17 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
         desc = f" — {contact.description}" if contact and contact.description else ""
         lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
     return "Chats:\n" + "\n".join(lines)
+
+
+async def _tool_edit_message(args: dict, ctx: ToolContext) -> str:
+    chat_id = args["chat_id"]
+    message_id = args["message_id"]
+    new_text = args["new_text"]
+    try:
+        await ctx.client.edit_message(chat_id, message_id, new_text)
+        return f"Message {message_id} in chat {chat_id} edited."
+    except Exception as e:
+        return f"Failed to edit message: {e}"
 
 
 async def _tool_sleep(args: dict, ctx: ToolContext) -> str:

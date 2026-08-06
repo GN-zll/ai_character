@@ -109,6 +109,10 @@ class BotClient(BaseTelegramClient):
         assert self._bot is not None
         await self._bot.send_chat_action(chat_id=int(chat_id), action=action)
 
+    async def edit_message(self, chat_id: int | str, message_id: int, new_text: str) -> None:
+        assert self._bot is not None
+        await self._bot.edit_message_text(chat_id=int(chat_id), message_id=message_id, text=new_text)
+
     # ── Обработка входящих ─────────────────────────────────────
 
     async def start_listening(self) -> None:
