@@ -281,6 +281,42 @@ class Worker:
             except Exception:
                 logger.exception("Failed to add diary entry to vector store")
 
+        # Обновляем working memory
+        await self._update_working_memory(response.content if response.content else "")
+
         # Очищаем контекст
         self._temporary_context.clear()
         logger.info("Context dumped and cleared")
+
+    async def _update_working_memory(self, diary_summary: str) -> None:
+        """Обновить working memory на основе текущего контекста."""
+        current_wm = self._working_memory.get()
+
+        wm_prompt = ChatMessage(
+            role="user",
+            content=(
+                f"Update the working memory file. This is short-term memory (1-3 days).\n\n"
+                f"Current working memory:\n{current_wm if current_wm else '(empty)'}\n\n"
+                f"Recent conversation summary:\n{diary_summary}\n\n"
+                f"Rules:\n"
+                f"- Preserve: unfinished tasks, promises, reminders, ongoing conversations\n"
+                f"- Remove: completed tasks, items older than 3 days\n"
+                f"- Add: new important details from this conversation\n"
+                f"- Write in third person with dates\n"
+                f"- Be concise, max 500 chars\n\n"
+                f"Write the updated working memory (just the content, no explanation):"
+            ),
+        )
+
+        try:
+            response = await self._llm.chat(
+                messages=[
+                    ChatMessage(role="system", content="You are a memory manager. Write concise working memory notes."),
+                    wm_prompt,
+                ]
+            )
+            if response.content:
+                self._working_memory.update(response.content.strip())
+                logger.info("Working memory updated (%d chars)", len(response.content))
+        except Exception:
+            logger.exception("Failed to update working memory")
