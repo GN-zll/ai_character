@@ -4,18 +4,18 @@ import asyncio
 import logging
 import random
 
+from src.character.personality import Personality
 from src.client.base import BaseTelegramClient
-from src.llm.provider import LLMProvider, ChatMessage
+from src.core.anti_repeat import AntiRepeat
+from src.core.notification import Notification, NotificationManager
+from src.core.sleep import SleepManager
+from src.core.tools import ToolContext, WorkerMode, build_tools, execute_tool, get_mode_prompt_extra
+from src.llm.provider import ChatMessage, LLMProvider
+from src.memory.chat_history import ChatHistory
+from src.memory.contacts import Contacts
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
-from src.memory.contacts import Contacts
-from src.memory.chat_history import ChatHistory
-from src.character.personality import Personality
-from src.core.notification import Notification, NotificationManager
-from src.core.tools import build_tools, execute_tool, ToolContext, WorkerMode, get_mode_prompt_extra
-from src.core.anti_repeat import AntiRepeat
-from src.core.sleep import SleepManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ class Worker:
         personality: Personality,
         notification_manager: NotificationManager,
         sleep_manager: SleepManager | None = None,
+        scheduler: object = None,
     ) -> None:
         from src.config import Config
         self._name = name
@@ -56,6 +57,7 @@ class Worker:
         self._personality = personality
         self._notification_manager = notification_manager
         self._sleep_manager = sleep_manager
+        self._scheduler = scheduler
 
         self._anti_repeat = AntiRepeat(
             llm=llm,
@@ -170,6 +172,7 @@ class Worker:
             temporary_context=self._temporary_context,
             anti_repeat=self._anti_repeat,
             sleep_manager=self._sleep_manager,
+            scheduler=self._scheduler,
             mode=self._mode,
         )
 

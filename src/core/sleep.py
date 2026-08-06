@@ -1,23 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
 from src.config import Config
-from src.core.notification import Notification, NotificationManager
+from src.core.scheduler import MSK_OFFSET, Scheduler, _msk_now
+from src.llm.provider import ChatMessage, LLMProvider
 from src.memory.diary import Diary
 from src.memory.working_memory import WorkingMemory
-from src.llm.provider import LLMProvider, ChatMessage
 
 logger = logging.getLogger(__name__)
-
-MSK_OFFSET = 3  # UTC+3
-
-
-def _msk_now() -> datetime:
-    """Текущее время по МСК."""
-    return datetime.now(timezone.utc) + timedelta(hours=MSK_OFFSET)
 
 
 class SleepManager:
@@ -36,7 +28,8 @@ class SleepManager:
     def __init__(
         self,
         config: Config,
-        notification_manager: NotificationManager,
+        notification_manager,
+        scheduler: Scheduler,
         diary: Diary,
         llm: LLMProvider,
         working_memory: WorkingMemory,
@@ -45,6 +38,7 @@ class SleepManager:
     ) -> None:
         self._config = config
         self._nm = notification_manager
+        self._scheduler = scheduler
         self._diary = diary
         self._llm = llm
         self._working_memory = working_memory
@@ -52,25 +46,15 @@ class SleepManager:
         self._on_wake_callback = on_wake_callback
 
         self._last_wake_time = datetime.now(timezone.utc)
-        self._alarm: datetime | None = None
         self._is_sleeping = False
 
-        self._task: asyncio.Task | None = None
-        self._running = False
-
     def start(self) -> None:
-        self._running = True
-        self._task = asyncio.create_task(self._alarm_loop())
+        # Нет собственного цикла — сон управляется снизу через scheduler.
+        # start оставляем для консистентности lifecycle.
         logger.info("SleepManager started")
 
     async def stop(self) -> None:
-        self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        logger.info("SleepManager stopped")
 
     @property
     def is_sleeping(self) -> bool:
@@ -121,7 +105,6 @@ class SleepManager:
             "After that, call set_alarm(wake_hour, wake_minute) to set your alarm."
         )
 
-        self._alarm = None  # Reset alarm
         return prompt
 
     async def confirm_sleep(self) -> str:
@@ -141,52 +124,36 @@ class SleepManager:
         await self._update_working_memory()
 
         msk = _msk_now()
-        alarm_str = ""
-        if self._alarm:
-            alarm_str = f" Alarm set for {self._alarm.strftime('%H:%M')} MSK."
 
         return (
-            f"Goodnight! Time: {msk.strftime('%H:%M')} MSK.{alarm_str}\n"
+            f"Goodnight! Time: {msk.strftime('%H:%M')} MSK.\n"
             f"Diary consolidated: {consolidated} entries processed.\n"
             f"Relationship summaries updated: {summaries_updated} contacts.\n"
             f"You are now sleeping. Sweet dreams!"
         )
 
     async def set_alarm(self, wake_hour: int, wake_minute: int = 0) -> str:
-        """Поставить будильник."""
+        """Поставить будильник (через единый Scheduler)."""
         msk = _msk_now()
         wake_time_msk = msk.replace(hour=wake_hour, minute=wake_minute, second=0, microsecond=0)
         if wake_time_msk <= msk:
             wake_time_msk += timedelta(days=1)
 
         # Конвертируем в UTC
-        self._alarm = wake_time_msk - timedelta(hours=MSK_OFFSET)
+        fire_utc = wake_time_msk - timedelta(hours=MSK_OFFSET)
 
         sleep_hours = (wake_time_msk - msk).total_seconds() / 3600
+        self._scheduler.add_alarm(fire_utc)
         logger.info("Alarm set for %s MSK (%.1f hours)", wake_time_msk.strftime('%H:%M'), sleep_hours)
         return f"Alarm set for {wake_hour:02d}:{wake_minute:02d} MSK. Sweet dreams! 🌙"
 
-    async def _alarm_loop(self) -> None:
-        """Проверяет будильник каждую минуту."""
-        while self._running:
-            try:
-                await asyncio.sleep(60)
+    async def wake(self) -> None:
+        """Разбудить персонажа. Вызывается Scheduler'ом при срабатывании alarm."""
+        if not self._is_sleeping:
+            return
 
-                if self._is_sleeping and self._alarm:
-                    now = datetime.now(timezone.utc)
-                    if now >= self._alarm:
-                        await self._wake_up()
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("SleepManager alarm loop error")
-
-    async def _wake_up(self) -> None:
-        """Разбудить персонажа."""
         self._is_sleeping = False
         self._last_wake_time = datetime.now(timezone.utc)
-        alarm = self._alarm
-        self._alarm = None
 
         # Вызываем callback для сброса mode worker'а
         if self._on_wake_callback:
@@ -195,21 +162,7 @@ class SleepManager:
             except Exception:
                 logger.exception("Wake callback failed")
 
-        msk = _msk_now()
-        sleep_duration = ""
-        if alarm:
-            hours = (datetime.now(timezone.utc) - alarm).total_seconds() / 3600
-            sleep_duration = f" You slept for about {hours:.0f} hours."
-
-        await self._nm.push(Notification(
-            priority=20,  # высокий приоритет — проснулась
-            message=(
-                f"Good morning! ☀️ It's {msk.strftime('%H:%M')} MSK.{sleep_duration}\n"
-                f"You just woke up. Time to check your messages and start a new day!"
-            ),
-            metadata={"source": "alarm_wake_up"},
-        ))
-        logger.info("Woke up at %s MSK", msk.strftime('%H:%M'))
+        logger.info("Woke up at %s MSK", _msk_now().strftime('%H:%M'))
 
     async def _consolidate_relationship_summaries(self) -> int:
         """Обновить summary отношений для контактов с изменениями за день."""

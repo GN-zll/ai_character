@@ -42,6 +42,7 @@ class MemoryConfig:
     history_db: str = "data/history.db"
     history_max_per_chat: int = 1000
     stat_levels_file: str = "data/stat_levels.json"
+    reminders_file: str = "data/reminders.json"
 
 
 @dataclass

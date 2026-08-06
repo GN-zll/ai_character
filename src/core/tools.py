@@ -5,6 +5,7 @@ import json
 import logging
 import random
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -12,12 +13,9 @@ from src.llm.provider import Tool, ToolCall
 
 if TYPE_CHECKING:
     from src.client.base import BaseTelegramClient
+    from src.core.notification import NotificationManager
     from src.memory.diary import Diary
     from src.memory.rag import VectorStore
-    from src.memory.contacts import Contacts
-    from src.memory.chat_history import ChatHistory
-    from src.core.notification import NotificationManager
-    from src.llm.provider import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +43,7 @@ class ToolContext:
     messages_in_a_row: int = field(default=0)
     anti_repeat: object = None  # AntiRepeat
     sleep_manager: object = None  # SleepManager
+    scheduler: object = None  # Scheduler
     mode: WorkerMode = WorkerMode.IDLE
 
 
@@ -117,8 +116,16 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="wait",
-        description="Wait for the next notification. Use when you have nothing more to do right now.",
-        parameters={"type": "object", "properties": {}},
+        description="Wait for the next notification. Optionally specify minutes to schedule a check-in back in that time.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "minutes": {
+                    "type": "integer",
+                    "description": "Optional. Check back in this many minutes (schedule a comeback). Omit to just wait for any next notification.",
+                },
+            },
+        },
     ),
     Tool(
         name="pause",
@@ -277,6 +284,33 @@ _BASE_TOOLS: list[Tool] = [
             "required": ["wake_hour"],
         },
     ),
+Tool(
+        name="set_reminder",
+        description="Set a reminder for yourself (e.g. to call someone, congratulate on a birthday, reply later). "
+                    "Provide either an absolute time (at) or a relative delay (in_minutes), not both.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "description": "What to remember and why. e.g. 'congratulate Masha on her birthday' or 'reply to Dima as requested'.",
+                },
+                "at": {
+                    "type": "string",
+                    "description": "Absolute time to fire (MSK). Format 'YYYY-MM-DD HH:MM' or 'HH:MM'. If 'HH:MM' passed and time already passed today, it schedules for tomorrow.",
+                },
+                "in_minutes": {
+                    "type": "integer",
+                    "description": "Fire after this many minutes from now (relative).",
+                },
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Optional chat_id this reminder relates to (for context when it fires).",
+                },
+            },
+            "required": ["note"],
+        },
+    ),
 ]
 
 # ── Контекстные tools (доступны только в определённых mode) ──
@@ -348,8 +382,7 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
         elif name == "ask":
             return await _tool_ask(args, ctx)
         elif name in ("wait", "pause"):
-            ctx.messages_in_a_row = 0
-            return "Waiting for next notification."
+            return await _tool_wait(args, ctx)
         elif name == "contacts_get":
             return _tool_contacts_get(args, ctx)
         elif name == "contacts_update":
@@ -366,6 +399,8 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_update_relationship(args, ctx)
         elif name == "sleep":
             return await _tool_sleep(args, ctx)
+        elif name == "set_reminder":
+            return await _tool_set_reminder(args, ctx)
         elif name == "confirm_sleep":
             return await _tool_confirm_sleep(args, ctx)
         elif name == "set_alarm":
@@ -852,6 +887,76 @@ def _tool_update_relationship(args: dict, ctx: ToolContext) -> str:
         label = ctx.contacts.get_stat_level(stat_name, value)
         parts.append(f"  {stat_name}: {value:+d} {label} ({delta:+d})")
     return "\n".join(parts)
+
+
+async def _tool_wait(args: dict, ctx: ToolContext) -> str:
+    """Wait — без аргументов: ждать следующего уведомления.
+    С minutes: запланировать check-in через N минут в Scheduler.
+    """
+    minutes = args.get("minutes")
+    if minutes:
+        if not ctx.scheduler:
+            return "Scheduler not available."
+        ctx.scheduler.add_wait(int(minutes))
+        return f"Scheduled check-in in {int(minutes)} minutes."
+    ctx.messages_in_a_row = 0
+    return "Waiting for next notification."
+
+
+async def _tool_set_reminder(args: dict, ctx: ToolContext) -> str:
+    """Поставить напоминание через Scheduler."""
+    if not ctx.scheduler:
+        return "Scheduler not available."
+
+    note = args.get("note", "").strip()
+    if not note:
+        return "Error: 'note' is required for set_reminder."
+
+    at = args.get("at")
+    in_minutes = args.get("in_minutes")
+    chat_id = args.get("chat_id")
+
+    if at and in_minutes:
+        return "Error: provide either 'at' or 'in_minutes', not both."
+    if not at and not in_minutes:
+        return "Error: provide either 'at' (absolute time) or 'in_minutes' (relative delay)."
+
+    if in_minutes:
+        if in_minutes <= 0:
+            return "Error: 'in_minutes' must be positive."
+        fire_utc = datetime.now(timezone.utc) + timedelta(minutes=in_minutes)
+        ctx.scheduler.add_reminder(fire_utc=fire_utc, note=note, chat_id=chat_id)
+        return (
+            f"Reminder set: '{note}' in {in_minutes} minute(s). "
+            f"Time: {fire_utc.strftime('%H:%M')} UTC."
+        )
+
+    # Абсолютное время (MSK)
+    from src.core.scheduler import MSK_OFFSET, _msk_now
+
+    try:
+        parsed = datetime.strptime(at, "%Y-%m-%d %H:%M")
+    except ValueError:
+        try:
+            parsed = datetime.strptime(at, "%H:%M")
+        except ValueError:
+            return f"Error: invalid time format '{at}'. Use 'YYYY-MM-DD HH:MM' or 'HH:MM'."
+
+    msk = _msk_now()
+    # Если только время — применяем к сегодняшнему дню (MSK)
+    if len(at) == 5:  # "HH:MM"
+        parsed = msk.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+        if parsed <= msk:
+            parsed += timedelta(days=1)
+
+    # parsed интерпретируется как MSK → конвертируем в UTC
+    fire_utc = parsed - timedelta(hours=MSK_OFFSET)
+
+    ctx.scheduler.add_reminder(fire_utc=fire_utc, note=note, chat_id=chat_id)
+    return (
+        f"Reminder set: '{note}' at {parsed.strftime('%Y-%m-%d %H:%M')} MSK "
+        f"({fire_utc.strftime('%H:%M')} UTC)."
+    )
 
 
 async def _tool_sleep(args: dict, ctx: ToolContext) -> str:

@@ -3,21 +3,21 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from src.config import Config
+from src.character.personality import Personality
 from src.client import create_client
 from src.client.base import IncomingMessage
+from src.config import Config
+from src.core.batcher import MessageBatcher
+from src.core.notification import NotificationManager
+from src.core.scheduler import Scheduler
+from src.core.sleep import SleepManager
+from src.core.worker import Worker
 from src.llm.provider import LLMProvider
+from src.memory.chat_history import ChatHistory
+from src.memory.contacts import Contacts
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
 from src.memory.working_memory import WorkingMemory
-from src.memory.contacts import Contacts
-from src.memory.chat_history import ChatHistory
-from src.character.personality import Personality
-from src.core.notification import NotificationManager
-from src.core.worker import Worker
-from src.core.proactive import ProactiveScheduler
-from src.core.batcher import MessageBatcher
-from src.core.sleep import SleepManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +54,13 @@ async def main() -> None:
     personality = Personality(config.character)
     notification_manager = NotificationManager()
 
+    # Scheduler — единый планерщик для alarms, reminders, wait, proactive
+    scheduler = Scheduler.create(
+        notification_manager,
+        config=config,
+        data_file=config.memory.reminders_file,
+    )
+
     # Добавляем owner'а в контакты
     if config.character.owner_chat_id:
         contacts.update(
@@ -65,11 +72,14 @@ async def main() -> None:
     sleep_manager = SleepManager(
         config=config,
         notification_manager=notification_manager,
+        scheduler=scheduler,
         diary=diary,
         llm=llm,
         working_memory=working_memory,
         contacts=contacts,
     )
+    scheduler.set_sleep_manager(sleep_manager)
+    scheduler.configure_dependencies(diary=diary, contacts=contacts, llm=llm)
 
     worker = Worker(
         name="main",
@@ -84,19 +94,12 @@ async def main() -> None:
         personality=personality,
         notification_manager=notification_manager,
         sleep_manager=sleep_manager,
+        scheduler=scheduler,
     )
 
     # Callback: когда alarm срабатывает → сбрасываем mode worker'а в IDLE
     from src.core.tools import WorkerMode
     sleep_manager._on_wake_callback = lambda: setattr(worker, '_mode', WorkerMode.IDLE)
-
-    proactive = ProactiveScheduler(
-        config=config,
-        notification_manager=notification_manager,
-        diary=diary,
-        llm=llm,
-        contacts=contacts,
-    )
 
     batcher = MessageBatcher(
         notification_manager=notification_manager,
@@ -149,7 +152,7 @@ async def main() -> None:
     logger.info("Bot started as %s (id=%s)", me["first_name"], me["id"])
 
     worker.start()
-    proactive.start()
+    scheduler.start()
     sleep_manager.start()
 
     logger.info("Press Ctrl+C to stop")
@@ -160,8 +163,8 @@ async def main() -> None:
         logger.info("Shutting down...")
     finally:
         await worker.stop()
-        await proactive.stop()
         await sleep_manager.stop()
+        await scheduler.stop()
         await client.disconnect()
 
 
