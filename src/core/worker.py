@@ -86,7 +86,7 @@ class Worker:
 
     async def _handle_notification(self, notification: Notification) -> None:
         """Обработать одну нотификацию."""
-        logger.info("Worker %s processing: %s", self._name, notification.message[:80])
+        logger.info("Worker %s processing: %s", self._name, notification.message[:200])
 
         # Добавляем входящее в контекст
         self._temporary_context.append(ChatMessage(
