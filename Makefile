@@ -5,6 +5,10 @@ install:
 	.venv/bin/pip install -e .
 
 run:
+	@if sudo systemctl is-active --quiet ai-character; then \
+		echo "Service ai-character is running, stopping it..."; \
+		sudo systemctl stop ai-character; \
+	fi
 	.venv/bin/python -m src.main
 
 deploy:
