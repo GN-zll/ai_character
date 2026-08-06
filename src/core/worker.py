@@ -17,6 +17,7 @@ from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.tools import build_tools, execute_tool, ToolContext
 from src.core.anti_repeat import AntiRepeat
+from src.core.sleep import SleepManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class Worker:
         chat_history: ChatHistory,
         personality: Personality,
         notification_manager: NotificationManager,
+        sleep_manager: SleepManager | None = None,
     ) -> None:
         from src.config import Config
         self._name = name
@@ -55,6 +57,7 @@ class Worker:
         self._chat_history = chat_history
         self._personality = personality
         self._notification_manager = notification_manager
+        self._sleep_manager = sleep_manager
 
         self._anti_repeat = AntiRepeat(
             llm=llm,
@@ -128,6 +131,7 @@ class Worker:
             config=self._config,
             temporary_context=self._temporary_context,
             anti_repeat=self._anti_repeat,
+            sleep_manager=self._sleep_manager,
         )
 
         # Цикл LLM с tool calls (как в kuni)

@@ -35,6 +35,7 @@ class ToolContext:
     temporary_context: list = field(default_factory=list)
     messages_in_a_row: int = field(default=0)
     anti_repeat: object = None  # AntiRepeat
+    sleep_manager: object = None  # SleepManager
 
 
 def build_tools() -> list[Tool]:
@@ -163,6 +164,47 @@ def build_tools() -> list[Tool]:
             description="List all chats you can write to, with last activity time. Use to decide who to write to proactively.",
             parameters={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="sleep",
+            description="Start the sleep process. You'll be asked to wrap up before sleeping. After confirming, call set_alarm() to set your wake-up time.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "wake_hour": {
+                        "type": "integer",
+                        "description": "Hour to wake up (0-23, MSK timezone)",
+                    },
+                    "wake_minute": {
+                        "type": "integer",
+                        "description": "Minute to wake up (0-59, default 0)",
+                    },
+                },
+                "required": ["wake_hour"],
+            },
+        ),
+        Tool(
+            name="confirm_sleep",
+            description="Confirm you're ready to sleep. This triggers diary consolidation and memory update. Call set_alarm() after this.",
+            parameters={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="set_alarm",
+            description="Set your alarm clock for waking up. Call this after confirm_sleep().",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "wake_hour": {
+                        "type": "integer",
+                        "description": "Hour to wake up (0-23, MSK timezone)",
+                    },
+                    "wake_minute": {
+                        "type": "integer",
+                        "description": "Minute to wake up (0-59, default 0)",
+                    },
+                },
+                "required": ["wake_hour"],
+            },
+        ),
     ]
 
 
@@ -191,6 +233,12 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return _tool_get_chat_context(args, ctx)
         elif name == "get_chats":
             return _tool_get_chats(args, ctx)
+        elif name == "sleep":
+            return await _tool_sleep(args, ctx)
+        elif name == "confirm_sleep":
+            return await _tool_confirm_sleep(args, ctx)
+        elif name == "set_alarm":
+            return await _tool_set_alarm(args, ctx)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -466,3 +514,25 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
         desc = f" — {contact.description}" if contact and contact.description else ""
         lines.append(f"- {cid}: {name}{desc} (messages: {chat['message_count']}, last: {chat['last_activity'][:16]})")
     return "Chats:\n" + "\n".join(lines)
+
+
+async def _tool_sleep(args: dict, ctx: ToolContext) -> str:
+    if not ctx.sleep_manager:
+        return "Sleep manager not available."
+    wake_hour = args["wake_hour"]
+    wake_minute = args.get("wake_minute", 0)
+    return await ctx.sleep_manager.start_sleep_process(wake_hour, wake_minute)
+
+
+async def _tool_confirm_sleep(args: dict, ctx: ToolContext) -> str:
+    if not ctx.sleep_manager:
+        return "Sleep manager not available."
+    return await ctx.sleep_manager.confirm_sleep()
+
+
+async def _tool_set_alarm(args: dict, ctx: ToolContext) -> str:
+    if not ctx.sleep_manager:
+        return "Sleep manager not available."
+    wake_hour = args["wake_hour"]
+    wake_minute = args.get("wake_minute", 0)
+    return await ctx.sleep_manager.set_alarm(wake_hour, wake_minute)

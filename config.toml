@@ -41,3 +41,4 @@ anti_repeat_max_history = 20   # сколько последних ответо�
 enabled = true
 start_hour = 1              # 00:00
 end_hour = 9                # 08:00
+msk_offset = 3              # UTC+3

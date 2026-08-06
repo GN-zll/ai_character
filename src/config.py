@@ -65,6 +65,7 @@ class NightConfig:
     enabled: bool = True
     start_hour: int = 0
     end_hour: int = 8
+    msk_offset: int = 3
 
 
 @dataclass

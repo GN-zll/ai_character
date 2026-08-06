@@ -17,6 +17,7 @@ from src.core.notification import Notification, NotificationManager
 from src.core.worker import Worker
 from src.core.proactive import ProactiveScheduler
 from src.core.batcher import MessageBatcher
+from src.core.sleep import SleepManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +66,7 @@ async def main() -> None:
         chat_history=chat_history,
         personality=personality,
         notification_manager=notification_manager,
+        sleep_manager=sleep_manager,
     )
 
     proactive = ProactiveScheduler(
@@ -72,6 +74,14 @@ async def main() -> None:
         notification_manager=notification_manager,
         diary=diary,
         llm=llm,
+    )
+
+    sleep_manager = SleepManager(
+        config=config,
+        notification_manager=notification_manager,
+        diary=diary,
+        llm=llm,
+        working_memory=working_memory,
     )
 
     batcher = MessageBatcher(
@@ -121,6 +131,7 @@ async def main() -> None:
 
     worker.start()
     proactive.start()
+    sleep_manager.start()
 
     logger.info("Press Ctrl+C to stop")
 
@@ -131,6 +142,7 @@ async def main() -> None:
     finally:
         await worker.stop()
         await proactive.stop()
+        await sleep_manager.stop()
         await client.disconnect()
 
 
