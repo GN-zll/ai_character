@@ -56,6 +56,8 @@ class BehaviorConfig:
     typing_max_delay: float = 15.0
     follow_up_chance: float = 0.3
     follow_up_max: int = 3
+    anti_repeat_threshold: float = 0.75
+    anti_repeat_max_history: int = 20
 
 
 @dataclass

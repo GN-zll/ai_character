@@ -34,6 +34,8 @@ typing_min_delay = 2.0         # мин задержка перед отправ
 typing_max_delay = 15.0        # макс задержка перед отправкой (сек)
 follow_up_chance = 0.3         # шанс отправить follow-up сообщение (0.0-1.0)
 follow_up_max = 3              # максимум follow-up сообщений подряд
+anti_repeat_threshold = 0.75   # порог similarity для anti-repeat (0.0-1.0)
+anti_repeat_max_history = 20   # сколько последних ответов хранить
 
 [night]
 enabled = true

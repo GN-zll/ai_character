@@ -34,6 +34,7 @@ class ToolContext:
     config: object = None  # Config
     temporary_context: list = field(default_factory=list)
     messages_in_a_row: int = field(default=0)
+    anti_repeat: object = None  # AntiRepeat
 
 
 def build_tools() -> list[Tool]:
@@ -202,6 +203,12 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
     text = args["text"]
     reply_to = args.get("reply_to_message_id")
 
+    # Anti-repeat check
+    if ctx.anti_repeat:
+        repeat_error = await ctx.anti_repeat.check(chat_id, text)
+        if repeat_error:
+            return f"Error: {repeat_error}"
+
     # Запускаем фоновый typing indicator (каждые 3 сек)
     typing_stop = asyncio.Event()
     typing_task = asyncio.create_task(_typing_loop(ctx.client, chat_id, typing_stop))
@@ -222,10 +229,14 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
                     reply_to = None  # reply only to first message
                 sent = await ctx.client.send_message(chat_id, line, reply_to=reply_to)
                 _save_outgoing(ctx, chat_id, sent.message_id, line)
+                if ctx.anti_repeat:
+                    await ctx.anti_repeat.record(chat_id, line)
             return _build_send_result(ctx, chat_id, len(lines))
         else:
             sent = await ctx.client.send_message(chat_id, text, reply_to=reply_to)
             _save_outgoing(ctx, chat_id, sent.message_id, text)
+            if ctx.anti_repeat:
+                await ctx.anti_repeat.record(chat_id, text)
             return _build_send_result(ctx, chat_id, 1)
     finally:
         # Останавливаем typing indicator

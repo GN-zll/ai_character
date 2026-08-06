@@ -16,6 +16,7 @@ from src.memory.chat_history import ChatHistory
 from src.character.personality import Personality
 from src.core.notification import Notification, NotificationManager
 from src.core.tools import build_tools, execute_tool, ToolContext
+from src.core.anti_repeat import AntiRepeat
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,12 @@ class Worker:
         self._chat_history = chat_history
         self._personality = personality
         self._notification_manager = notification_manager
+
+        self._anti_repeat = AntiRepeat(
+            llm=llm,
+            threshold=self._config.behavior.anti_repeat_threshold,
+            max_history=self._config.behavior.anti_repeat_max_history,
+        )
 
         self._temporary_context: list[ChatMessage] = []
         self._task: asyncio.Task | None = None
@@ -120,6 +127,7 @@ class Worker:
             llm=self._llm,
             config=self._config,
             temporary_context=self._temporary_context,
+            anti_repeat=self._anti_repeat,
         )
 
         # Цикл LLM с tool calls (как в kuni)
