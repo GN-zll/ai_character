@@ -10,6 +10,7 @@ venv/
 env/
 .idea/
 .vscode/
+.ruff_cache/
 *.swp
 *.swo
 .env

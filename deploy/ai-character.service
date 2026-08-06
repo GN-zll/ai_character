@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Character Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/opt/ai_character
+ExecStart=/opt/ai_character/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
