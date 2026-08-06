@@ -6,8 +6,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CHARACTER_BASE_PATH = "data/character_base.md"
-
 
 @dataclass
 class EmotionalState:
