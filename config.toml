@@ -1,6 +1,6 @@
 [telegram]
 client_type = "bot"          # bot или userbot
-whitelist = [893193762]      # chat_id которые могут писать (пусто = все)
+whitelist = []               # chat_id которые могут писать (пусто = все)
 
 [llm]
 base_url = "https://api.deepseek.com"
@@ -9,8 +9,8 @@ embedding_model = "text-embedding-3-small"
 
 [character]
 name = "Yuki"
-owner_name = "神図"
-owner_chat_id = 893193762
+owner_name = "YourName"
+owner_chat_id = 0            # your Telegram user ID
 prompt_file = "data/character_base.md"
 
 [memory]
