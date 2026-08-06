@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
@@ -48,17 +47,14 @@ class Tool:
 class LLMProvider:
     """Универсальный LLM провайдер (OpenAI-совместимый API)."""
 
-    def __init__(
-        self,
-        api_key: str | None = None,
-        base_url: str | None = None,
-        model: str | None = None,
-        embedding_model: str | None = None,
-    ) -> None:
-        self._api_key = api_key or os.getenv("LLM_API_KEY", "")
-        self._base_url = base_url or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
-        self._model = model or os.getenv("LLM_MODEL", "gpt-4o")
-        self._embedding_model = embedding_model or os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    def __init__(self, config=None) -> None:
+        from src.config import LLMConfig
+        if config is None:
+            config = LLMConfig()
+        self._api_key = config.api_key
+        self._base_url = config.base_url
+        self._model = config.model
+        self._embedding_model = config.embedding_model
 
         self._client = AsyncOpenAI(
             api_key=self._api_key,

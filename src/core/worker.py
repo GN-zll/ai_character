@@ -19,8 +19,6 @@ from src.core.tools import build_tools, execute_tool, ToolContext
 
 logger = logging.getLogger(__name__)
 
-DIARY_TOKEN_TRIGGER = 20000
-
 
 class Worker:
     """Worker — корутина, обрабатывающая нотификации через LLM.
@@ -33,6 +31,7 @@ class Worker:
         self,
         *,
         name: str,
+        config=None,
         client: BaseTelegramClient,
         llm: LLMProvider,
         diary: Diary,
@@ -43,7 +42,9 @@ class Worker:
         personality: Personality,
         notification_manager: NotificationManager,
     ) -> None:
+        from src.config import Config
         self._name = name
+        self._config = config or Config()
         self._client = client
         self._llm = llm
         self._diary = diary
@@ -189,14 +190,14 @@ class Worker:
 
             # Проверяем размер контекста
             total_chars = sum(len(m.content or "") for m in self._temporary_context)
-            if total_chars > DIARY_TOKEN_TRIGGER * 3:  # грубая оценка
+            if total_chars > self._config.behavior.diary_token_trigger * 3:  # грубая оценка
                 logger.info("Context overflow, dumping to diary")
                 await self._dump_to_diary()
                 break
 
         # Проверяем переполнение после обработки
         total_chars = sum(len(m.content or "") for m in self._temporary_context)
-        if total_chars > DIARY_TOKEN_TRIGGER * 3:
+        if total_chars > self._config.behavior.diary_token_trigger * 3:
             await self._dump_to_diary()
 
     async def _lookup_diary(self) -> str:

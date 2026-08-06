@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 
-from dotenv import load_dotenv
-
+from src.config import Config
 from src.client import create_client
 from src.client.base import IncomingMessage
 from src.llm.provider import LLMProvider
@@ -27,41 +25,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_whitelist() -> set[int]:
-    raw = os.getenv("WHITELIST_CHAT_IDS", "")
-    if not raw.strip():
-        return set()
-    return {int(x.strip()) for x in raw.split(",") if x.strip()}
-
-
 async def main() -> None:
-    load_dotenv()
+    # ── Config ─────────────────────────────────────────────────
+    config = Config.load()
 
-    # ── Whitelist ──────────────────────────────────────────────
-    whitelist = load_whitelist()
-    if whitelist:
-        logger.info("Whitelist active: %s", whitelist)
+    if config.telegram.whitelist:
+        logger.info("Whitelist active: %s", config.telegram.whitelist)
     else:
         logger.info("No whitelist — all messages will be processed")
 
     # ── Components ─────────────────────────────────────────────
-    client = create_client()
-    llm = LLMProvider()
-    diary = Diary()
-    vector_store = VectorStore()
-    working_memory = WorkingMemory()
-    contacts = Contacts()
-    chat_history = ChatHistory()
-    personality = Personality()
+    client = create_client(config.telegram.client_type)
+    llm = LLMProvider(config.llm)
+    diary = Diary(config.memory.diary_dir)
+    vector_store = VectorStore(config.memory.vectors_dir)
+    working_memory = WorkingMemory(config.memory.working_memory_file)
+    contacts = Contacts(config.memory.contacts_file)
+    chat_history = ChatHistory(config.memory.history_db, config.memory.history_max_per_chat)
+    personality = Personality(config.character)
     notification_manager = NotificationManager()
 
     # Добавляем owner'а в контакты
-    owner_id = os.getenv("OWNER_CHAT_ID")
-    if owner_id:
-        contacts.update(int(owner_id), name=personality.name + "'s owner", tags=["owner"])
+    if config.character.owner_chat_id:
+        contacts.update(
+            config.character.owner_chat_id,
+            name=config.character.owner_name,
+            tags=["owner"],
+        )
 
     worker = Worker(
         name="main",
+        config=config,
         client=client,
         llm=llm,
         diary=diary,
@@ -74,19 +68,23 @@ async def main() -> None:
     )
 
     proactive = ProactiveScheduler(
+        config=config,
         notification_manager=notification_manager,
         diary=diary,
         llm=llm,
-        contacts=contacts,
-        chat_history=chat_history,
     )
 
-    batcher = MessageBatcher(notification_manager, min_delay=0.0, max_delay=5.0)
+    batcher = MessageBatcher(
+        notification_manager,
+        min_delay=config.behavior.batch_delay_min,
+        max_delay=config.behavior.batch_delay_max,
+    )
 
     # ── Message handler → history + batcher ───────────────────
     @client.on_new_message()
     async def on_message(msg: IncomingMessage) -> None:
-        if whitelist and msg.chat_id not in whitelist:
+        # Whitelist
+        if config.telegram.whitelist and msg.chat_id not in config.telegram.whitelist:
             logger.debug("Ignored message from %s (chat_id=%s)", msg.sender_name, msg.chat_id)
             return
 
@@ -102,11 +100,6 @@ async def main() -> None:
                 text=msg.text,
                 is_outgoing=msg.is_outgoing,
             )
-
-        # Auto-add contact если новый
-        if not msg.is_outgoing and not contacts.get(msg.chat_id):
-            contacts.update(msg.chat_id, name=msg.sender_name, tags=["auto"])
-            logger.info("Auto-added contact: %s (%s)", msg.sender_name, msg.chat_id)
 
         # Отправляем в batcher
         if msg.text and not msg.is_outgoing:

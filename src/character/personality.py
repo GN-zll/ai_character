@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,11 +27,14 @@ class EmotionalState:
 class Personality:
     """Управление персонажем: промпт, характер, эмоции."""
 
-    def __init__(self, prompt_path: str | Path = CHARACTER_BASE_PATH) -> None:
-        self._name = os.getenv("CHARACTER_NAME", "Yuki")
-        self._owner_name = os.getenv("OWNER_NAME", "master")
+    def __init__(self, config=None) -> None:
+        from src.config import CharacterConfig
+        if config is None:
+            config = CharacterConfig()
+        self._name = config.name
+        self._owner_name = config.owner_name
         self._emotional_state = EmotionalState()
-        self._prompt_path = Path(prompt_path)
+        self._prompt_path = Path(config.prompt_file)
 
         self._base_prompt = self._load_prompt()
 

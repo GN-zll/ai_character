@@ -9,16 +9,8 @@ from src.client.base import BaseTelegramClient
 logger = logging.getLogger(__name__)
 
 
-def create_client(client_type: str | None = None) -> BaseTelegramClient:
-    """Фабрика для создания Telegram клиента.
-
-    Тип клиента берётся из переменной окружения TELEGRAM_CLIENT_TYPE
-    или из параметра client_type.
-
-    Допустимые значения: "bot" или "userbot".
-    """
-    client_type = client_type or os.getenv("TELEGRAM_CLIENT_TYPE", "bot")
-
+def create_client(client_type: str = "bot") -> BaseTelegramClient:
+    """Фабрика для создания Telegram клиента."""
     if client_type == "bot":
         from src.client.bot import BotClient
 

@@ -1,0 +1,35 @@
+[telegram]
+client_type = "bot"          # bot или userbot
+whitelist = [893193762]      # chat_id которые могут писать (пусто = все)
+
+[llm]
+base_url = "https://api.deepseek.com"
+model = "deepseek-v4-flash"
+embedding_model = "text-embedding-3-small"
+
+[character]
+name = "Yuki"
+owner_name = "神図"
+owner_chat_id = 893193762
+prompt_file = "data/character_base.md"
+
+[memory]
+diary_dir = "data/diary"
+vectors_dir = "data/vectors"
+working_memory_file = "data/working_memory.md"
+contacts_file = "data/contacts.json"
+history_db = "data/history.db"
+history_max_per_chat = 1000
+
+[behavior]
+proactive_interval_min = 27
+proactive_chance = 0.5
+batch_delay_min = 0.0
+batch_delay_max = 5.0
+diary_token_trigger = 20000
+worker_max_iterations = 20
+
+[night]
+enabled = true
+start_hour = 0              # 00:00
+end_hour = 8                # 08:00
