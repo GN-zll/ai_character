@@ -28,6 +28,10 @@ batch_delay_min = 0.0
 batch_delay_max = 5.0
 diary_token_trigger = 20000
 worker_max_iterations = 20
+typing_wpm_min = 100           # мин символов в минуту (медленнее = человечнее)
+typing_wpm_max = 300           # макс символов в минуту
+typing_min_delay = 2.0         # мин задержка перед отправкой (сек)
+typing_max_delay = 15.0        # макс задержка перед отправкой (сек)
 
 [night]
 enabled = true

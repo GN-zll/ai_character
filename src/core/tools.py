@@ -31,6 +31,7 @@ class ToolContext:
     chat_history: object = None  # ChatHistory
     notification_manager: NotificationManager = None
     llm: object = None  # LLMProvider (avoid circular import)
+    config: object = None  # Config
     temporary_context: list = field(default_factory=list)
 
 
@@ -200,7 +201,7 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
 
     try:
         # Typing simulation delay (имитация набора текста)
-        await _simulate_typing_delay(text)
+        await _simulate_typing_delay(text, ctx.config)
 
         # Разбиваем многострочные сообщения
         lines = [l for l in text.split("\n") if l.strip()]
@@ -237,15 +238,18 @@ async def _typing_loop(client, chat_id: int, stop: asyncio.Event) -> None:
         pass
 
 
-async def _simulate_typing_delay(text: str) -> None:
+async def _simulate_typing_delay(text: str, config=None) -> None:
     """Имитация набора текста — задержка в зависимости от длины сообщения."""
-    min_wpm = 100
-    max_wpm = 300
-    wpm = random.uniform(min_wpm, max_wpm)
-    chars_per_sec = wpm * 5 / 60  # ~8-25 символа/сек
+    from src.config import BehaviorConfig
+    if config is None:
+        cfg = BehaviorConfig()
+    else:
+        cfg = config.behavior
+    wpm = random.uniform(cfg.typing_wpm_min, cfg.typing_wpm_max)
+    chars_per_sec = wpm * 5 / 60
     delay = len(text) / chars_per_sec
-    delay = min(delay, 15.0)  # макс 15 сек
-    delay = max(delay, 2.0)   # мин 2 сек
+    delay = min(delay, cfg.typing_max_delay)
+    delay = max(delay, cfg.typing_min_delay)
     logger.debug("Typing delay: %.1fs for %d chars", delay, len(text))
     await asyncio.sleep(delay)
 

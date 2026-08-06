@@ -50,6 +50,10 @@ class BehaviorConfig:
     batch_delay_max: float = 5.0
     diary_token_trigger: int = 20000
     worker_max_iterations: int = 20
+    typing_wpm_min: int = 100
+    typing_wpm_max: int = 300
+    typing_min_delay: float = 2.0
+    typing_max_delay: float = 15.0
 
 
 @dataclass

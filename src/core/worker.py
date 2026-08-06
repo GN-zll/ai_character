@@ -118,6 +118,7 @@ class Worker:
             chat_history=self._chat_history,
             notification_manager=self._notification_manager,
             llm=self._llm,
+            config=self._config,
             temporary_context=self._temporary_context,
         )
 
