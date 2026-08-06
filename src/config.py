@@ -149,10 +149,19 @@ class Config:
         telegram = TelegramConfig(**data.get("telegram", {}))
         telegram.client_type = os.getenv("TELEGRAM_CLIENT_TYPE", telegram.client_type)
 
+        # Whitelist из .env (comma-separated)
+        whitelist_str = os.getenv("WHITELIST_CHAT_IDS", "")
+        if whitelist_str.strip():
+            telegram.whitelist = [int(x.strip()) for x in whitelist_str.split(",") if x.strip()]
+
         llm = LLMConfig(**data.get("llm", {}))
         llm.api_key = os.getenv("LLM_API_KEY", llm.api_key)
 
         character = CharacterConfig(**data.get("character", {}))
+        # Owner info из .env
+        character.owner_name = os.getenv("OWNER_NAME", character.owner_name)
+        owner_id_str = os.getenv("OWNER_CHAT_ID", "0")
+        character.owner_chat_id = int(owner_id_str) if owner_id_str.strip() else 0
         memory = MemoryConfig(**data.get("memory", {}))
         behavior = BehaviorConfig(**data.get("behavior", {}))
         night = NightConfig(**data.get("night", {}))
