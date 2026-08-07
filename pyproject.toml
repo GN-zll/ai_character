@@ -10,6 +10,7 @@ dependencies = [
     "chromadb>=0.5",
     "python-dotenv>=1.0",
     "toml>=0.10",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
