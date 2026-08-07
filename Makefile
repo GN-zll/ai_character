@@ -1,4 +1,4 @@
-.PHONY: install run deploy logs restart stop status
+.PHONY: install run deploy logs restart stop status view-logs view-logs-tail
 
 install:
 	python3 -m venv .venv
@@ -24,6 +24,12 @@ update:
 
 restart:
 	sudo systemctl restart ai-character
+
+view-logs:
+	.venv/bin/python scripts/view_logs.py
+
+view-logs-tail:
+	.venv/bin/python scripts/view_logs.py --tail 100
 
 stop:
 	sudo systemctl stop ai-character
