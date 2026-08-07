@@ -37,6 +37,7 @@ class ScheduleKind:
     REMINDER = "reminder"
     WAIT = "wait"
     PROACTIVE = "proactive"
+    MOOD_REFLECTION = "mood_reflection"
 
 
 @dataclass
@@ -163,6 +164,7 @@ class Scheduler:
         self._running = True
         self._load()
         self._ensure_proactive_scheduled()
+        self._ensure_mood_reflection_scheduled()
         self._task = asyncio.create_task(self._loop())
         logger.info("Scheduler started (%d items)", len(self._items))
 
@@ -239,6 +241,29 @@ class Scheduler:
             return
         self._schedule_next_proactive()
 
+    def _ensure_mood_reflection_scheduled(self) -> None:
+        """Убедиться что запланирован хотя бы один mood_reflection item."""
+        if any(i.kind == ScheduleKind.MOOD_REFLECTION for i in self._items):
+            return
+        self._schedule_next_mood_reflection()
+
+    def _schedule_next_mood_reflection(self) -> None:
+        """Запланировать следующий mood_reflection item с рандомным fire_utc."""
+        cfg = self._config.behavior if self._config else None
+        base_interval = cfg.mood_reflection_interval_min if cfg else 180
+        delay_min = base_interval * 0.7
+        delay_max = base_interval * 1.3
+        delay = random.uniform(delay_min, delay_max)
+
+        self._items.append(ScheduleItem(
+            id=uuid.uuid4().hex,
+            kind=ScheduleKind.MOOD_REFLECTION,
+            fire_utc=_utc_now() + timedelta(minutes=delay),
+            created_utc=_utc_now(),
+            meta={"interval": base_interval},
+        ))
+        logger.debug("Next mood reflection scheduled in %.1f min", delay)
+
     def _schedule_next_proactive(self) -> None:
         """Запланировать следующий proactive item с рандомным fire_utc."""
         cfg = self._config.behavior if self._config else None
@@ -291,6 +316,8 @@ class Scheduler:
             await self._fire_wait(item)
         elif item.kind == ScheduleKind.PROACTIVE:
             await self._fire_proactive(item)
+        elif item.kind == ScheduleKind.MOOD_REFLECTION:
+            await self._fire_mood_reflection(item)
         else:
             logger.warning("Unknown scheduler kind: %s", item.kind)
 
@@ -347,6 +374,25 @@ class Scheduler:
 
         self._schedule_next_proactive()
 
+    async def _fire_mood_reflection(self, item: ScheduleItem) -> None:
+        """Mood reflection: всегда срабатывает и всегда respawn.
+
+        Нотификация без хардкода контекста — модель сама соберёт его через ask().
+        """
+        await self._nm.push(Notification(
+            priority=4,
+            message=(
+                "Time for mood reflection. Consider what has happened recently. "
+                "How do you feel? Has your mood or energy changed? "
+                "Use ask() to recall recent events if needed. "
+                "Use reflect_mood to update your emotional state, "
+                "and optionally write a diary reflection entry."
+            ),
+            metadata={"source": "mood_reflection"},
+        ))
+        logger.info("Mood reflection fired")
+        self._schedule_next_mood_reflection()
+
     async def _generate_proactive_message(self) -> str | None:
         """Сгенерировать proactive сообщение (outreach или reflection).
 
@@ -386,7 +432,10 @@ class Scheduler:
     def _save(self) -> None:
         """Сохранить persistable items (не proactive)."""
         try:
-            persistable = [i for i in self._items if i.kind != ScheduleKind.PROACTIVE]
+            persistable = [
+                i for i in self._items
+                if i.kind not in (ScheduleKind.PROACTIVE, ScheduleKind.MOOD_REFLECTION)
+            ]
             self._data_file.parent.mkdir(parents=True, exist_ok=True)
             self._data_file.write_text(
                 json.dumps([i.to_dict() for i in persistable], ensure_ascii=False, indent=2),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 
 from src.config import Config
@@ -33,8 +34,9 @@ class SleepManager:
         diary: Diary,
         llm: LLMProvider,
         working_memory: WorkingMemory,
-        contacts: object = None,  # Contacts
+contacts: object = None,  # Contacts
         on_wake_callback: object = None,  # Callable[[], None]
+        personality: object = None,  # Personality
     ) -> None:
         self._config = config
         self._nm = notification_manager
@@ -44,9 +46,11 @@ class SleepManager:
         self._working_memory = working_memory
         self._contacts = contacts
         self._on_wake_callback = on_wake_callback
+        self._personality = personality
 
         self._last_wake_time = datetime.now(timezone.utc)
         self._is_sleeping = False
+        self._sleep_start: datetime | None = None
 
     def start(self) -> None:
         # Нет собственного цикла — сон управляется снизу через scheduler.
@@ -113,6 +117,7 @@ class SleepManager:
             return "You are already sleeping!"
 
         self._is_sleeping = True
+        self._sleep_start = datetime.now(timezone.utc)
 
         # Diary consolidation
         consolidated = await self._consolidate_diary()
@@ -152,7 +157,15 @@ class SleepManager:
         if not self._is_sleeping:
             return
 
+        # Восстанавливаем энергию в зависимости от длительности сна и качества сна
+        if self._personality is not None:
+            try:
+                self._apply_sleep_energy_recovery()
+            except Exception:
+                logger.exception("Failed to apply sleep energy recovery")
+
         self._is_sleeping = False
+        self._sleep_start = None
         self._last_wake_time = datetime.now(timezone.utc)
 
         # Вызываем callback для сброса mode worker'а
@@ -163,6 +176,29 @@ class SleepManager:
                 logger.exception("Wake callback failed")
 
         logger.info("Woke up at %s MSK", _msk_now().strftime('%H:%M'))
+
+    def _apply_sleep_energy_recovery(self) -> None:
+        """Вычислить восстановление энергии после сна.
+
+        recovery = (0.3 + hours * 0.1) * quality, quality ∈ [0.5, 1.5].
+        Энергия не может превысить 1.0.
+        """
+        hours = 0.0
+        if self._sleep_start is not None:
+            hours = (datetime.now(timezone.utc) - self._sleep_start).total_seconds() / 3600
+
+        quality = random.uniform(0.5, 1.5)
+        recovery = (0.3 + hours * 0.1) * quality
+        recovery = max(0.0, min(1.0, recovery))
+
+        new_energy = max(0.0, min(1.0, self._personality.energy + recovery))
+        if new_energy != self._personality.energy:
+            old = self._personality.energy
+            self._personality.update_mood(self._personality.mood, energy=new_energy)
+            logger.info(
+                "Sleep energy recovery: %.2f → %.2f (%.1f h, quality=%.2f)",
+                old, new_energy, hours, quality,
+            )
 
     async def _consolidate_relationship_summaries(self) -> int:
         """Обновить summary отношений для контактов с изменениями за день."""

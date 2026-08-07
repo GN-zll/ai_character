@@ -112,12 +112,17 @@ IMPORTANT:
         diary_entries: str = "",
         contacts: str = "",
         todo: str = "",
+        current_time: str = "",
     ) -> str:
         """Собрать полный system prompt."""
         parts = [self._base_prompt]
 
         # Эмоциональное состояние
         parts.append(f"\n<emotional_state>\n{self._emotional_state.describe()}\n</emotional_state>")
+
+        # Текущее время — чтобы модель знала, сколько сейчас времени
+        if current_time:
+            parts.append(f"\n<current_time>\n{current_time}\n</current_time>")
 
         # Рабочая память
         if working_memory:
@@ -144,6 +149,14 @@ IMPORTANT:
     @property
     def emotional_state(self) -> EmotionalState:
         return self._emotional_state
+
+    @property
+    def energy(self) -> float:
+        return self._emotional_state.energy
+
+    @property
+    def mood(self) -> str:
+        return self._emotional_state.mood
 
     def update_mood(self, mood: str, energy: float | None = None, sociability: float | None = None) -> None:
         """Обновить настроение."""

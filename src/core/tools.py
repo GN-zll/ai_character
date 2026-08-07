@@ -377,13 +377,22 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="todo_done",
-        description="Mark a todo item as completed by its number (see the <todo> list in your system prompt).",
+        description=(
+            "Mark a todo item as completed by its number (see the <todo> list in your system prompt). "
+            "Also report how this task affected your energy: use a small value like +/-0.02..0.06 "
+            "for minor tasks, +/-0.06..0.12 for moderate ones, +/-0.12..0.16 for intense ones. "
+            "Positive if the task recharged you, negative if it drained you."
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "index": {
                     "type": "integer",
                     "description": "1-based index of the todo item to mark done",
+                },
+                "energy_change": {
+                    "type": "number",
+                    "description": "Energy impact: positive=recharging, negative=draining",
                 },
             },
             "required": ["index"],
@@ -1206,7 +1215,23 @@ def _tool_todo_done(args: dict, ctx: ToolContext) -> str:
     if not ctx.todo_list:
         return "Todo list not available."
 
-    return ctx.todo_list.done(args["index"])
+    result = ctx.todo_list.done(args["index"])
+
+    # Применяем влияние задачи на энергию (может быть положительным или отрицательным)
+    energy_change = args.get("energy_change")
+    if energy_change is not None and ctx.personality:
+        try:
+            new_energy = max(0.0, min(1.0, ctx.personality.energy + float(energy_change)))
+            old_energy = ctx.personality.energy
+            ctx.personality.update_mood(ctx.personality.mood, energy=new_energy)
+            result += (
+                f"\nEnergy: {old_energy:.2f} → {new_energy:.2f} "
+                f"(change {energy_change:+.2f})"
+            )
+        except (TypeError, ValueError):
+            logger.exception("Invalid energy_change in todo_done")
+
+    return result
 
 
 def _tool_todo_get(args: dict, ctx: ToolContext) -> str:

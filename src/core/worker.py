@@ -148,6 +148,8 @@ class Worker:
             base_reason = "wait_checkin"
         elif source == "proactive":
             base_reason = "proactive"
+        elif source == "mood_reflection":
+            base_reason = "mood_reflection"
         else:
             base_reason = "incoming_message"
 
@@ -170,11 +172,13 @@ class Worker:
         diary_context = await self._lookup_diary()
 
         # Собираем system prompt + mode-specific инструкции
+        from src.core.scheduler import _msk_now
         system_prompt = self._personality.get_system_prompt(
             working_memory=self._working_memory.get(),
             diary_entries=diary_context,
             contacts=self._contacts.format_for_prompt(),
             todo=self._todo_list.format_for_prompt(),
+            current_time=_msk_now().strftime("%Y-%m-%d %H:%M MSK"),
         )
         system_prompt += get_mode_prompt_extra(self._mode)
 
@@ -282,14 +286,16 @@ class Worker:
                 if tc.name == "wait":
                     should_break = True
 
-            if should_break:
-                break
-
-            # Проверяем размер контекста
+            # Проверяем размер контекста ДО выхода по wait.
+            # temporary_context при wait НЕ очищается, а продолжает накапливаться,
+            # пока не превысит порог и не будет дампнут в diary + working memory.
             total_chars = sum(len(m.content or "") for m in self._temporary_context)
             if total_chars > self._config.behavior.diary_token_trigger * 3:  # грубая оценка
                 logger.info("Context overflow, dumping to diary")
                 await self._dump_to_diary()
+                break
+
+            if should_break:
                 break
 
         # Проверяем переполнение после обработки

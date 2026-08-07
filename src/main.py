@@ -86,6 +86,7 @@ async def main() -> None:
         llm=llm,
         working_memory=working_memory,
         contacts=contacts,
+        personality=personality,
     )
     scheduler.set_sleep_manager(sleep_manager)
     scheduler.configure_dependencies(diary=diary, contacts=contacts, llm=llm)
