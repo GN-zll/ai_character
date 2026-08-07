@@ -45,6 +45,7 @@ class ToolContext:
     sleep_manager: object = None  # SleepManager
     scheduler: object = None  # Scheduler
     mode: WorkerMode = WorkerMode.IDLE
+    pending_send: dict | None = None  # {"chat_id", "text", "reply_to"}
 
 
 # ── Базовые tools (всегда доступны) ──────────────────────────
@@ -128,6 +129,37 @@ _BASE_TOOLS: list[Tool] = [
         },
     ),
     Tool(
+        name="confirm_send",
+        description="Confirm and send your original message despite unread messages you just saw.",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="send_another_message",
+        description=(
+            "Cancel your original message and send a different one instead. "
+            "Use this when unread messages change what you want to say."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer",
+                    "description": "The Telegram chat ID to send to",
+                },
+                "text": {
+                    "type": "string",
+                    "description": "The new message text to send instead",
+                },
+            },
+            "required": ["chat_id", "text"],
+        },
+    ),
+    Tool(
+        name="cancel_send",
+        description="Cancel sending entirely. Do nothing and wait.",
+        parameters={"type": "object", "properties": {}},
+    ),
+    Tool(
         name="contacts_get",
         description="Get info about a contact by chat_id, or list all contacts if no chat_id given.",
         parameters={
@@ -200,9 +232,8 @@ _BASE_TOOLS: list[Tool] = [
     Tool(
         name="open_chat",
         description=(
-            "Open a chat and read messages. Shows unread messages first, "
-            "then recent context (up to 15 messages). Messages have timestamps "
-            "to help you understand conversation flow and timing."
+            "Open a chat and read unread messages. Shows only unread messages "
+            "with timestamps. Use this when you have unread notifications."
         ),
         parameters={
             "type": "object",
@@ -385,6 +416,12 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return await _tool_ask(args, ctx)
         elif name == "wait":
             return await _tool_wait(args, ctx)
+        elif name == "confirm_send":
+            return await _tool_confirm_send(args, ctx)
+        elif name == "send_another_message":
+            return await _tool_send_another_message(args, ctx)
+        elif name == "cancel_send":
+            return _tool_cancel_send(args, ctx)
         elif name == "contacts_get":
             return _tool_contacts_get(args, ctx)
         elif name == "contacts_update":
@@ -417,8 +454,8 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
 async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -> str | None:
     """Проверить непрочитанные перед отправкой.
 
-    Если есть непрочитанные — открываем чат и показываем что увидели.
-    LLM решает что делать дальше (продолжить отправку или обработать unread).
+    Если есть непрочитанные — сохраняем pending и показываем decision prompt.
+    LLM выбирает: confirm_send / send_another_message / cancel_send.
     """
     if not ctx.chat_history:
         return None
@@ -428,7 +465,7 @@ async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -
     if not unread:
         return None
 
-    # "Открываем чат" — помечаем прочитанным локально и на стороне Telegram
+    # Помечаем прочитанными
     last_msg_id = max(m.message_id for m in unread)
     ctx.chat_history.mark_chat_read(chat_id, last_msg_id)
     if ctx.client:
@@ -437,18 +474,26 @@ async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -
         except Exception:
             pass
 
-    # Формируем контекст
-    lines = []
-    for m in unread:
-        lines.append(f"[id={m.message_id} {m.sender_name}]: {m.text}")
+    # Сохраняем pending
+    ctx.pending_send = {
+        "chat_id": chat_id,
+        "text": text,
+    }
 
-    unread_text = "\n".join(lines)
+    # Форматируем unread с таймстампами
+    character_name = ctx.config.character.name if ctx.config else "me"
+    unread_formatted = _format_messages_with_time(unread, character_name)
+
+    text_preview = text[:100] + ("..." if len(text) > 100 else "")
 
     return (
-        f"You were about to send this message:\n\"{text}\"\n\n"
-        f"But you opened chat {chat_id} and found {len(unread)} unread message(s):\n"
-        f"{unread_text}\n\n"
-        f"Read the unread messages first. You can still send your message afterwards."
+        f"You have {len(unread)} unread message(s) in chat {chat_id}:\n"
+        f"{unread_formatted}\n\n"
+        f"Your message was NOT sent yet: \"{text_preview}\"\n"
+        f"Consider the unread messages, then choose:\n"
+        f"- confirm_send: send your original message anyway\n"
+        f"- send_another_message(chat_id, text): send a different message instead\n"
+        f"- cancel_send: cancel sending and wait"
     )
 
 
@@ -464,11 +509,20 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
             return f"Error: {repeat_error}"
 
     # Проверяем непрочитанные сообщения перед отправкой
-    # Если есть — "открываем чат" и показываем что увидели
     unread_result = await _check_unread_before_send(ctx, chat_id, text)
     if unread_result:
         return unread_result
 
+    return await _execute_send(ctx, chat_id, text, reply_to)
+
+
+async def _execute_send(
+    ctx: ToolContext,
+    chat_id: int,
+    text: str,
+    reply_to: int | None = None,
+) -> str:
+    """Выполнить фактическую отправку сообщения (typing, typos, anti-repeat)."""
     # Запускаем фоновый typing indicator (каждые 3 сек)
     typing_stop = asyncio.Event()
     typing_task = asyncio.create_task(_typing_loop(ctx.client, chat_id, typing_stop))
@@ -517,6 +571,34 @@ async def _tool_send_message(args: dict, ctx: ToolContext) -> str:
             pass
 
 
+async def _tool_confirm_send(args: dict, ctx: ToolContext) -> str:
+    """Подтвердить и отправить оригинальное сообщение."""
+    if not ctx.pending_send:
+        return "Nothing to confirm. No pending message."
+
+    chat_id = ctx.pending_send["chat_id"]
+    text = ctx.pending_send["text"]
+    ctx.pending_send = None
+
+    return await _execute_send(ctx, chat_id, text)
+
+
+async def _tool_send_another_message(args: dict, ctx: ToolContext) -> str:
+    """Отменить оригинальное сообщение и отправить другое."""
+    ctx.pending_send = None
+
+    chat_id = args["chat_id"]
+    text = args["text"]
+
+    return await _execute_send(ctx, chat_id, text)
+
+
+def _tool_cancel_send(args: dict, ctx: ToolContext) -> str:
+    """Отменить отправку."""
+    ctx.pending_send = None
+    return "Sending cancelled."
+
+
 def _build_send_result(ctx: ToolContext, chat_id: int, count: int) -> str:
     """Построить результат отправки с follow-up промптом."""
     ctx.messages_in_a_row += count
@@ -531,7 +613,7 @@ def _build_send_result(ctx: ToolContext, chat_id: int, count: int) -> str:
         max_count = 3
 
     if ctx.messages_in_a_row < max_count and random.random() < chance:
-        result += "\n\nYou should add a follow-up #send_telegram_message."
+        result += "\n\nYou should add a follow-up send_message()."
     elif ctx.messages_in_a_row >= max_count:
         result += f"\n\nWarning: you have sent {ctx.messages_in_a_row} messages in a row! Give your participant space to breathe!"
 
@@ -862,24 +944,20 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
 
 
 async def _tool_open_chat(args: dict, ctx: ToolContext) -> str:
-    """Открыть чат: непрочитанные + недавний контекст с таймстампами."""
+    """Открыть чат и прочитать непрочитанные сообщения."""
     chat_id = args["chat_id"]
 
     if not ctx.chat_history:
         return "Chat history not available."
 
-    messages = ctx.chat_history.get_open_chat_messages(chat_id, max_count=15)
+    messages = ctx.chat_history.get_unread_messages(chat_id, limit=50)
 
     if not messages:
-        return f"No messages found in chat {chat_id}. Nothing to read."
+        return f"No unread messages in chat {chat_id}."
 
-    # Помечаем прочитанным по последнему входящему сообщению
-    last_incoming_id = max(
-        (m.message_id for m in messages if not m.is_outgoing),
-        default=0,
-    )
-    if last_incoming_id:
-        ctx.chat_history.mark_chat_read(chat_id, last_incoming_id)
+    # Помечаем прочитанным
+    last_msg_id = max(m.message_id for m in messages)
+    ctx.chat_history.mark_chat_read(chat_id, last_msg_id)
     if ctx.client:
         try:
             await ctx.client.mark_read(chat_id)
@@ -888,7 +966,7 @@ async def _tool_open_chat(args: dict, ctx: ToolContext) -> str:
 
     character_name = ctx.config.character.name if ctx.config else "me"
     formatted = _format_messages_with_time(messages, character_name)
-    return f"Opened chat {chat_id} ({len(messages)} messages):\n{formatted}"
+    return f"Opened chat {chat_id} ({len(messages)} unread):\n{formatted}"
 
 
 async def _tool_reflect_mood(args: dict, ctx: ToolContext) -> str:
