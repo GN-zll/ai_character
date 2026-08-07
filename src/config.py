@@ -26,6 +26,21 @@ class LLMConfig:
 
 
 @dataclass
+class LLMLogConfig:
+    enabled: bool = False
+    file: str = "data/llm_logs.jsonl"
+    log_system_prompt: bool = True
+    log_messages: bool = True
+    log_response: bool = True
+    log_tool_calls: bool = True
+    log_tool_results: bool = True
+    log_tokens: bool = True
+    log_model: bool = True
+    log_latency: bool = True
+    log_embeddings: bool = False
+
+
+@dataclass
 class CharacterConfig:
     name: str = "Yuki"
     owner_name: str = "master"
@@ -135,6 +150,7 @@ class StatLevelsConfig:
 class Config:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    llm_log: LLMLogConfig = field(default_factory=LLMLogConfig)
     character: CharacterConfig = field(default_factory=CharacterConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     behavior: BehaviorConfig = field(default_factory=BehaviorConfig)
@@ -164,6 +180,8 @@ class Config:
         llm = LLMConfig(**data.get("llm", {}))
         llm.api_key = os.getenv("LLM_API_KEY", llm.api_key)
 
+        llm_log = LLMLogConfig(**data.get("llm_log", {}))
+
         character = CharacterConfig(**data.get("character", {}))
         # Owner info из .env
         character.owner_name = os.getenv("OWNER_NAME", character.owner_name)
@@ -187,6 +205,7 @@ class Config:
         return cls(
             telegram=telegram,
             llm=llm,
+            llm_log=llm_log,
             character=character,
             memory=memory,
             behavior=behavior,

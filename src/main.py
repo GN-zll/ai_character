@@ -37,7 +37,7 @@ async def main() -> None:
 
     # ── Components ─────────────────────────────────────────────
     client = create_client(config.telegram.client_type)
-    llm = LLMProvider(config.llm)
+    llm = LLMProvider(config.llm, log_config=config.llm_log)
     diary = Diary(config.memory.diary_dir)
     vector_store = VectorStore(config.memory.vectors_dir)
     working_memory = WorkingMemory(config.memory.working_memory_file)

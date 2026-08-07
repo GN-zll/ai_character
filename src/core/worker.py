@@ -131,6 +131,19 @@ class Worker:
 
         logger.info("Worker %s processing: %s", self._name, notification.message[:200])
 
+        # Определяем reason для логирования
+        source = notification.metadata.get("source")
+        if source == "alarm_wake_up":
+            base_reason = "alarm_wake_up"
+        elif source == "reminder":
+            base_reason = "reminder"
+        elif source == "wait":
+            base_reason = "wait_checkin"
+        elif source == "proactive":
+            base_reason = "proactive"
+        else:
+            base_reason = "incoming_message"
+
         # Relationship context — показываем статы отношений если есть
         chat_id = notification.metadata.get("chat_id")
         relationship_context = ""
@@ -178,10 +191,19 @@ class Worker:
 
         # Цикл LLM с tool calls (как в kuni)
         max_iterations = 20
-        for _ in range(max_iterations):
+        for iteration in range(max_iterations):
             messages = [ChatMessage(role="system", content=system_prompt)] + self._temporary_context
 
-            response = await self._llm.chat(messages=messages, tools=tools)
+            # Определяем reason: первая итерация — из notification, дальше — continuation
+            if iteration == 0:
+                reason = base_reason
+            else:
+                reason = "continuation:tool_calls"
+
+            response = await self._llm.chat(
+                messages=messages, tools=tools,
+                reason=reason, iteration=iteration,
+            )
 
             if response.content:
                 logger.info("LLM response: %s", response.content[:200])
@@ -230,6 +252,12 @@ class Worker:
             should_break = False
             for tc in response.tool_calls:
                 result = await execute_tool(tc, tool_ctx)
+
+                # Логируем результат tool'а
+                if self._llm.llm_logger:
+                    await self._llm.llm_logger.log_tool_result(
+                        tc.id, tc.name, tc.arguments, result,
+                    )
 
                 self._temporary_context.append(ChatMessage(
                     role="tool",
@@ -314,7 +342,8 @@ class Worker:
             messages=[
                 ChatMessage(role="system", content="You are a memory compressor. Write concise diary entries."),
                 summary_prompt,
-            ]
+            ],
+            reason="diary_dump",
         )
 
         if response.content:
@@ -363,7 +392,8 @@ class Worker:
                 messages=[
                     ChatMessage(role="system", content="You are a memory manager. Write concise working memory notes."),
                     wm_prompt,
-                ]
+                ],
+                reason="working_memory_update",
             )
             if response.content:
                 self._working_memory.update(response.content.strip())

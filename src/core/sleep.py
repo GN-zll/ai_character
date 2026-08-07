@@ -212,7 +212,8 @@ class SleepManager:
                     messages=[
                         ChatMessage(role="system", content="You are a relationship analyst. Write concise summaries in English."),
                         prompt,
-                    ]
+                    ],
+                    reason="sleep:relationship_consolidation",
                 )
                 if response.content:
                     self._contacts.update_summary(contact.chat_id, response.content.strip())
@@ -256,7 +257,8 @@ class SleepManager:
                 messages=[
                     ChatMessage(role="system", content="You are a memory consolidator during sleep."),
                     prompt,
-                ]
+                ],
+                reason="sleep:diary_consolidation",
             )
             if response.content:
                 # Сохраняем консолидированную запись
@@ -290,7 +292,8 @@ class SleepManager:
                 messages=[
                     ChatMessage(role="system", content="You are a memory manager."),
                     prompt,
-                ]
+                ],
+                reason="sleep:working_memory_update",
             )
             if response.content:
                 self._working_memory.update(response.content.strip())

@@ -7,6 +7,19 @@ base_url = "https://api.deepseek.com"
 model = "deepseek-v4-flash"
 embedding_model = "text-embedding-3-small"
 
+[llm_log]
+enabled = true                          # включить/выключить логирование LLM
+file = "data/llm_logs.jsonl"            # путь к JSONL файлу логов
+log_system_prompt = true                # логировать системный промпт
+log_messages = true                     # логировать входящие сообщения
+log_response = true                     # логировать ответ LLM
+log_tool_calls = true                   # логировать tool calls от LLM
+log_tool_results = true                 # логировать результаты tool'ов
+log_tokens = true                       # логировать количество токенов
+log_model = true                        # логировать модель
+log_latency = true                      # логировать время запроса
+log_embeddings = false                  # логировать эмбеддинги (обычно не нужно)
+
 [character]
 name = "Yuki"
 prompt_file = "data/character_base.md"
