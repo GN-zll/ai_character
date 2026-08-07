@@ -599,9 +599,10 @@ async def _execute_send(
         text, had_typo = _apply_typos(text, ctx.config)
 
         # Разбиваем многострочные сообщения
+        # Стихи (≥3 строк) отправляем одним сообщением, чтобы сохранить структуру
         lines = [l for l in text.split("\n") if l.strip()]
         original_lines = [l for l in original_text.split("\n") if l.strip()]
-        if len(lines) > 1:
+        if len(lines) > 1 and len(lines) <= 2:
             for i, line in enumerate(lines):
                 if i > 0:
                     await _simulate_typing_delay(line)
