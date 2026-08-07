@@ -128,11 +128,6 @@ _BASE_TOOLS: list[Tool] = [
         },
     ),
     Tool(
-        name="pause",
-        description="Pause and wait for the next event. Same as wait.",
-        parameters={"type": "object", "properties": {}},
-    ),
-    Tool(
         name="contacts_get",
         description="Get info about a contact by chat_id, or list all contacts if no chat_id given.",
         parameters={
@@ -174,7 +169,12 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="get_chat_context",
-        description="Get recent messages from a chat to understand the conversation context. Use before writing to someone.",
+        description=(
+            "Get recent messages from a chat with timestamps. "
+            "A '--- (N min gap) ---' separator appears when there was a long pause "
+            "between messages — treat these as separate conversation segments, "
+            "don't continue old topics that ended hours ago."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -184,7 +184,7 @@ _BASE_TOOLS: list[Tool] = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Number of recent messages (default 20)",
+                    "description": "Number of recent messages (default 30)",
                 },
             },
             "required": ["chat_id"],
@@ -197,17 +197,17 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="open_chat",
-        description="Open a chat and read all unread messages. Shows full conversation context. Call this before responding to understand what was said.",
+        description=(
+            "Open a chat and read messages. Shows unread messages first, "
+            "then recent context (up to 15 messages). Messages have timestamps "
+            "to help you understand conversation flow and timing."
+        ),
         parameters={
             "type": "object",
             "properties": {
                 "chat_id": {
                     "type": "integer",
                     "description": "Chat ID to open and read",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max messages to load (default 20)",
                 },
             },
             "required": ["chat_id"],
@@ -381,7 +381,7 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return await _tool_diary_write(args, ctx)
         elif name == "ask":
             return await _tool_ask(args, ctx)
-        elif name in ("wait", "pause"):
+        elif name == "wait":
             return await _tool_wait(args, ctx)
         elif name == "contacts_get":
             return _tool_contacts_get(args, ctx)
@@ -778,22 +778,65 @@ def _save_outgoing(ctx: ToolContext, chat_id: int, message_id: int, text: str) -
             logger.exception("Failed to save outgoing message")
 
 
+def _format_messages_with_time(
+    messages: list,
+    character_name: str = "me",
+    gap_separator_minutes: int = 30,
+) -> str:
+    """Форматировать сообщения с таймстампами и gap-разделителями.
+
+    Формат: [8/7/26 12:15 PM] sender: text
+    Если между сообщениями > gap_separator_minutes — вставляет разделитель.
+    """
+    if not messages:
+        return ""
+
+    lines = []
+    prev_ts = None
+
+    for m in messages:
+        # Gap separator
+        if prev_ts is not None:
+            gap_seconds = (m.timestamp - prev_ts).total_seconds()
+            if gap_seconds > gap_separator_minutes * 60:
+                gap_minutes = int(gap_seconds / 60)
+                if gap_minutes >= 60:
+                    gap_hours = gap_minutes // 60
+                    gap_mins = gap_minutes % 60
+                    if gap_mins:
+                        gap_label = f"{gap_hours}h {gap_mins}min"
+                    else:
+                        gap_label = f"{gap_hours}h"
+                else:
+                    gap_label = f"{gap_minutes} min"
+                lines.append(f"\n--- ({gap_label} gap) ---\n")
+
+        # Timestamp в MSK (UTC+3)
+        msk_ts = m.timestamp + timedelta(hours=3)
+        ts_str = msk_ts.strftime("%-m/%-d/%y %-I:%M %p")
+
+        sender = character_name if m.is_outgoing else m.sender_name
+        lines.append(f"[{ts_str}] {sender}: {m.text}")
+
+        prev_ts = m.timestamp
+
+    return "\n".join(lines)
+
+
 def _tool_get_chat_context(args: dict, ctx: ToolContext) -> str:
     if not ctx.chat_history:
         return "Chat history not available."
 
     chat_id = args["chat_id"]
-    limit = args.get("limit", 20)
+    limit = args.get("limit", 30)
 
     messages = ctx.chat_history.get_messages(chat_id, limit=limit)
     if not messages:
         return f"No messages found for chat {chat_id}."
 
-    lines = []
-    for m in messages:
-        role = "me" if m.is_outgoing else m.sender_name
-        lines.append(f"[id={m.message_id} {role}]: {m.text}")
-    return "\n".join(lines)
+    character_name = ctx.config.character.name if ctx.config else "me"
+    formatted = _format_messages_with_time(messages, character_name)
+    return f"Chat {chat_id} context ({len(messages)} messages):\n{formatted}"
 
 
 def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
@@ -817,36 +860,33 @@ def _tool_get_chats(args: dict, ctx: ToolContext) -> str:
 
 
 async def _tool_open_chat(args: dict, ctx: ToolContext) -> str:
-    """Открыть чат и прочитать все непрочитанные сообщения."""
+    """Открыть чат: непрочитанные + недавний контекст с таймстампами."""
     chat_id = args["chat_id"]
-    limit = args.get("limit", 20)
 
-    # Загружаем последние сообщения из истории
-    if ctx.chat_history:
-        messages = ctx.chat_history.get_messages(chat_id, limit=limit)
-    else:
-        messages = []
+    if not ctx.chat_history:
+        return "Chat history not available."
+
+    messages = ctx.chat_history.get_open_chat_messages(chat_id, max_count=15)
 
     if not messages:
         return f"No messages found in chat {chat_id}. Nothing to read."
 
-    # Помечаем чат прочитанным (локально + на стороне Telegram)
-    last_msg_id = max((m.message_id for m in messages if not m.is_outgoing), default=0)
-    if last_msg_id and ctx.chat_history:
-        ctx.chat_history.mark_chat_read(chat_id, last_msg_id)
+    # Помечаем прочитанным по последнему входящему сообщению
+    last_incoming_id = max(
+        (m.message_id for m in messages if not m.is_outgoing),
+        default=0,
+    )
+    if last_incoming_id:
+        ctx.chat_history.mark_chat_read(chat_id, last_incoming_id)
     if ctx.client:
         try:
             await ctx.client.mark_read(chat_id)
         except Exception:
             logger.debug("Failed to mark_read for chat %s", chat_id)
 
-    # Формируем контекст
-    lines = []
-    for m in messages:
-        role = "me" if m.is_outgoing else m.sender_name
-        lines.append(f"[id={m.message_id} {role}]: {m.text}")
-
-    return f"Opened chat {chat_id} ({len(messages)} messages loaded):\n" + "\n".join(lines)
+    character_name = ctx.config.character.name if ctx.config else "me"
+    formatted = _format_messages_with_time(messages, character_name)
+    return f"Opened chat {chat_id} ({len(messages)} messages):\n{formatted}"
 
 
 async def _tool_reflect_mood(args: dict, ctx: ToolContext) -> str:

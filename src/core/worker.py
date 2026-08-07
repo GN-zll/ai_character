@@ -24,7 +24,7 @@ class Worker:
     """Worker — корутина, обрабатывающая нотификации через LLM.
 
     Аналог Worker из kuni: берёт нотификацию → diary lookup →
-    LLM с tool calls → обработка → повторяет до wait/pause.
+    LLM с tool calls → обработка → повторяет до wait.
     """
 
     def __init__(
@@ -234,9 +234,9 @@ class Worker:
                     ))
                 continue
 
-            # Проверяем: если LLM сгенерировал текст + только wait/pause — напоминаем
+            # Проверяем: если LLM сгенерировал текст + только wait — напоминаем
             has_send = any(tc.name == "send_message" for tc in response.tool_calls)
-            has_only_wait = all(tc.name in ("wait", "pause") for tc in response.tool_calls)
+            has_only_wait = all(tc.name == "wait" for tc in response.tool_calls)
             if response.content and not has_send and has_only_wait:
                 self._temporary_context.append(ChatMessage(
                     role="user",
@@ -269,7 +269,7 @@ class Worker:
                 if tool_ctx.mode != self._mode:
                     self._mode = tool_ctx.mode
 
-                if tc.name in ("wait", "pause"):
+                if tc.name == "wait":
                     should_break = True
 
             if should_break:
