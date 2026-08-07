@@ -172,8 +172,10 @@ _BASE_TOOLS: list[Tool] = [
         description=(
             "Get recent messages from a chat with timestamps. "
             "A '--- (N min gap) ---' separator appears when there was a long pause "
-            "between messages — treat these as separate conversation segments, "
-            "don't continue old topics that ended hours ago."
+            "between messages — treat these as separate conversation segments. "
+            "If significant time has passed, the previous conversation naturally "
+            "ended — you may start fresh, but don't pretend the old conversation "
+            "is still ongoing."
         ),
         parameters={
             "type": "object",
