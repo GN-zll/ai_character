@@ -484,12 +484,10 @@ async def _check_unread_before_send(ctx: ToolContext, chat_id: int, text: str) -
     character_name = ctx.config.character.name if ctx.config else "me"
     unread_formatted = _format_messages_with_time(unread, character_name)
 
-    text_preview = text[:100] + ("..." if len(text) > 100 else "")
-
     return (
         f"You have {len(unread)} unread message(s) in chat {chat_id}:\n"
         f"{unread_formatted}\n\n"
-        f"Your message was NOT sent yet: \"{text_preview}\"\n"
+        f"Your message was NOT sent yet:\n\"{text}\"\n\n"
         f"Consider the unread messages, then choose:\n"
         f"- confirm_send: send your original message anyway\n"
         f"- send_another_message(chat_id, text): send a different message instead\n"
