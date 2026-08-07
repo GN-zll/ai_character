@@ -58,17 +58,28 @@ class VectorStore:
         *,
         min_distance: float = 0.0,
         max_distance: float = 1.0,
+        where: dict | None = None,
     ) -> list[SearchResult]:
         """Поиск ближайших записей по эмбеддингу."""
         if self._collection.count() == 0:
             return []
 
-        n = min(n_results, self._collection.count())
-        results = self._collection.query(
-            query_embeddings=[embedding],
-            n_results=n,
-            include=["documents", "distances", "metadatas"],
-        )
+        kwargs: dict = {
+            "query_embeddings": [embedding],
+            "include": ["documents", "distances", "metadatas"],
+        }
+        if where:
+            n = min(n_results, len(self._collection.get(where=where)["ids"]))
+            kwargs["n_results"] = n
+            kwargs["where"] = where
+        else:
+            n = min(n_results, self._collection.count())
+            kwargs["n_results"] = n
+
+        if n == 0:
+            return []
+
+        results = self._collection.query(**kwargs)
 
         items = []
         for i in range(len(results["ids"][0])):

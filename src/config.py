@@ -48,6 +48,7 @@ class CharacterConfig:
     owner_name: str = "master"
     owner_chat_id: int = 0
     prompt_file: str = "data/character_base.md"
+    mood_file: str = "data/mood.json"
 
 
 @dataclass

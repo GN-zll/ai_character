@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -31,10 +32,34 @@ class Personality:
             config = CharacterConfig()
         self._name = config.name
         self._owner_name = config.owner_name
-        self._emotional_state = EmotionalState()
+        self._mood_path = Path(config.mood_file)
         self._prompt_path = Path(config.prompt_file)
 
+        self._emotional_state = self._load_mood()
         self._base_prompt = self._load_prompt()
+
+    def _load_mood(self) -> EmotionalState:
+        """Загрузить настроение из файла (persist между рестартами)."""
+        try:
+            if self._mood_path.exists():
+                data = json.loads(self._mood_path.read_text(encoding="utf-8"))
+                state = EmotionalState(**data)
+                logger.info("Mood loaded: %s", state.describe())
+                return state
+        except Exception:
+            logger.exception("Failed to load mood, using default")
+        return EmotionalState()
+
+    def _save_mood(self) -> None:
+        """Сохранить настроение в файл."""
+        try:
+            self._mood_path.parent.mkdir(parents=True, exist_ok=True)
+            self._mood_path.write_text(
+                json.dumps(asdict(self._emotional_state), ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.exception("Failed to save mood")
 
     def _load_prompt(self) -> str:
         """Загрузить промпт из файла. Если файла нет — создать дефолтный."""
@@ -127,4 +152,5 @@ IMPORTANT:
             self._emotional_state.energy = max(0.0, min(1.0, energy))
         if sociability is not None:
             self._emotional_state.sociability = max(0.0, min(1.0, sociability))
+        self._save_mood()
         logger.info("Mood updated: %s", self._emotional_state.describe())

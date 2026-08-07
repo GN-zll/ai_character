@@ -107,9 +107,16 @@ class Contacts:
             new_value = max(-100, min(100, old_value + delta))
             contact.stats[stat_name] = new_value
             logger.info("Stat %s for %s: %d → %d (%+d)", stat_name, contact.name, old_value, new_value, delta)
+        contact.summary = self._auto_summary(contact)
         self._contacts[chat_id] = contact
         self._save()
         return contact
+
+    @staticmethod
+    def _auto_summary(contact: Contact) -> str:
+        """Краткое авто-резюме из текущих статов."""
+        parts = [f"{k} {v:+d}" for k, v in contact.stats.items() if v != 0]
+        return ", ".join(parts) if parts else ""
 
     def update_summary(self, chat_id: int, summary: str) -> None:
         """Обновить summary отношений (только во сне)."""

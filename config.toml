@@ -24,6 +24,7 @@ log_embeddings = false                  # логировать эмбеддин�
 [character]
 name = "Yuki"
 prompt_file = "data/character_base.md"
+mood_file = "data/mood.json"
 
 [memory]
 diary_dir = "data/diary"

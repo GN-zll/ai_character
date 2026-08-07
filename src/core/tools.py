@@ -104,13 +104,18 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="ask",
-        description="Search your diary/memory for related information about a topic.",
+        description="Search your diary/memory for related information about a topic. "
+                    "Optionally pass chat_id to search only entries about a specific person.",
         parameters={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
                     "description": "What to search for in your memory",
+                },
+                "chat_id": {
+                    "type": "integer",
+                    "description": "Optional. Search only this person's diary entries.",
                 },
             },
             "required": ["query"],
@@ -763,6 +768,13 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
     if entry_type == "person" and chat_id is None:
         return "Error: chat_id is required for entry_type 'person'."
 
+    # Обогащаем текст записи именем человека (для поиска по имени)
+    embed_text = entry_text
+    if entry_type == "person" and chat_id and ctx.contacts:
+        contact = ctx.contacts.get(chat_id)
+        if contact and contact.name and not contact.name.startswith("User#"):
+            embed_text = f"Запись о человеке {contact.name} (chat_id={chat_id}): {entry_text}"
+
     entry = ctx.diary.add(
         entry_text,
         source="diary",
@@ -778,12 +790,15 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
     # Добавляем эмбеддинг в векторную БД
     if ctx.llm:
         try:
-            embedding = await ctx.llm.embed(entry_text)
+            embedding = await ctx.llm.embed(embed_text)
             if embedding is not None:
+                metadata = {"entry_id": entry.id, "source": "diary", "type": entry_type}
+                if chat_id is not None:
+                    metadata["chat_id"] = chat_id
                 ctx.vector_store.add(
-                    text=entry_text,
+                    text=embed_text,
                     embedding=embedding,
-                    metadata={"entry_id": entry.id, "source": "diary", "type": entry_type},
+                    metadata=metadata,
                 )
         except Exception:
             logger.exception("Failed to embed diary entry")
@@ -796,6 +811,7 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
 
 async def _tool_ask(args: dict, ctx: ToolContext) -> str:
     query = args["query"]
+    chat_id = args.get("chat_id")
 
     if not ctx.llm:
         return "Search unavailable (no LLM)."
@@ -804,10 +820,16 @@ async def _tool_ask(args: dict, ctx: ToolContext) -> str:
         embedding = await ctx.llm.embed(query)
         if embedding is None:
             return "Search unavailable (embeddings not supported by this provider)."
-        results = ctx.vector_store.query(embedding, n_results=5, max_distance=0.5)
+
+        # Если задан chat_id — ищем только записи об этом человеке
+        where_filter = None
+        if chat_id:
+            where_filter = {"$and": [{"type": "person"}, {"chat_id": chat_id}]}
+
+        results = ctx.vector_store.query(embedding, n_results=5, max_distance=0.5, where=where_filter)
 
         if not results:
-            return f"No memories found for '{query}'."
+            return _no_memories_hint(query)
 
         entries = []
         for r in results:
@@ -815,6 +837,22 @@ async def _tool_ask(args: dict, ctx: ToolContext) -> str:
         return "Found memories:\n" + "\n---\n".join(entries)
     except Exception as e:
         return f"Search failed: {e}"
+
+
+def _no_memories_hint(query: str) -> str:
+    """Универсальная подсказка при пустом результате поиска."""
+    return (
+        f"No memories found for '{query}'.\n\n"
+        "Search tips (try one or more of these):\n"
+        "- Rephrase the query with different, simpler keywords\n"
+        "- Try the same query in another language\n"
+        "- Break a complex query into smaller parts and search each one\n"
+        "- Use broader terms instead of specific ones\n"
+        "- Use get_chat_context(chat_id) to browse the recent conversation directly\n"
+        "- Use contacts_get(chat_id) to check relationship stats and contact info\n"
+        "- If nothing helps, the memory may not exist yet. Write it down first "
+        "with diary_write() so you can find it later."
+    )
 
 
 def _tool_contacts_get(args: dict, ctx: ToolContext) -> str:
