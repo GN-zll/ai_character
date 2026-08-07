@@ -15,6 +15,7 @@ from src.memory.chat_history import ChatHistory
 from src.memory.contacts import Contacts
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
+from src.memory.todo import TodoList
 from src.memory.working_memory import WorkingMemory
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,8 @@ class Worker:
         working_memory: WorkingMemory,
         contacts: Contacts,
         chat_history: ChatHistory,
-        personality: Personality,
+        todo_list: TodoList | None = None,
+        personality: Personality = None,
         notification_manager: NotificationManager,
         sleep_manager: SleepManager | None = None,
         scheduler: object = None,
@@ -54,6 +56,9 @@ class Worker:
         self._working_memory = working_memory
         self._contacts = contacts
         self._chat_history = chat_history
+        self._todo_list = todo_list or TodoList(
+            self._config.memory.todo_file if self._config else "data/todo.md"
+        )
         self._personality = personality
         self._notification_manager = notification_manager
         self._sleep_manager = sleep_manager
@@ -167,6 +172,7 @@ class Worker:
             working_memory=self._working_memory.get(),
             diary_entries=diary_context,
             contacts=self._contacts.format_for_prompt(),
+            todo=self._todo_list.format_for_prompt(),
         )
         system_prompt += get_mode_prompt_extra(self._mode)
 
@@ -186,6 +192,7 @@ class Worker:
             anti_repeat=self._anti_repeat,
             sleep_manager=self._sleep_manager,
             scheduler=self._scheduler,
+            todo_list=self._todo_list,
             mode=self._mode,
         )
 

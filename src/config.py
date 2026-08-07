@@ -23,6 +23,8 @@ class LLMConfig:
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-flash"
     embedding_model: str = "text-embedding-3-small"
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
 
 
 @dataclass
@@ -58,6 +60,7 @@ class MemoryConfig:
     history_max_per_chat: int = 1000
     stat_levels_file: str = "data/stat_levels.json"
     reminders_file: str = "data/reminders.json"
+    todo_file: str = "data/todo.md"
 
 
 @dataclass
@@ -66,7 +69,7 @@ class BehaviorConfig:
     proactive_chance: float = 0.5
     batch_delay_min: float = 0.0
     batch_delay_max: float = 5.0
-    diary_token_trigger: int = 20000
+    diary_token_trigger: int = 8000
     worker_max_iterations: int = 20
     typing_wpm_min: int = 100
     typing_wpm_max: int = 300
@@ -179,6 +182,7 @@ class Config:
 
         llm = LLMConfig(**data.get("llm", {}))
         llm.api_key = os.getenv("LLM_API_KEY", llm.api_key)
+        llm.embedding_api_key = os.getenv("EMBEDDING_API_KEY", llm.embedding_api_key)
 
         llm_log = LLMLogConfig(**data.get("llm_log", {}))
 

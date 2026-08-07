@@ -5,7 +5,8 @@ client_type = "bot"          # bot или userbot
 [llm]
 base_url = "https://api.deepseek.com"
 model = "deepseek-v4-flash"
-embedding_model = "text-embedding-3-small"
+embedding_model = "baai/bge-m3"
+embedding_base_url = "https://routerai.ru/api/v1"
 
 [llm_log]
 enabled = true                          # включить/выключить логирование LLM
@@ -32,6 +33,7 @@ contacts_file = "data/contacts.json"
 history_db = "data/history.db"
 history_max_per_chat = 1000
 stat_levels_file = "data/stat_levels.json"
+todo_file = "data/todo.md"
 
 [[relationship_stats]]
 name = "trust"
@@ -59,7 +61,7 @@ proactive_interval_min = 27
 proactive_chance = 0.5
 batch_delay_min = 0.0
 batch_delay_max = 5.0
-diary_token_trigger = 20000
+diary_token_trigger = 8000
 worker_max_iterations = 20
 typing_wpm_min = 30           # мин символов в минуту (медленнее = человечнее)
 typing_wpm_max = 200           # макс символов в минуту

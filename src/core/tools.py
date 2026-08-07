@@ -44,6 +44,7 @@ class ToolContext:
     anti_repeat: object = None  # AntiRepeat
     sleep_manager: object = None  # SleepManager
     scheduler: object = None  # Scheduler
+    todo_list: object = None  # TodoList
     mode: WorkerMode = WorkerMode.IDLE
     pending_send: dict | None = None  # {"chat_id", "text", "reply_to"}
 
@@ -317,7 +318,7 @@ _BASE_TOOLS: list[Tool] = [
             "required": ["wake_hour"],
         },
     ),
-Tool(
+    Tool(
         name="set_reminder",
         description="Set a reminder for yourself (e.g. to call someone, congratulate on a birthday, reply later). "
                     "Provide either an absolute time (at) or a relative delay (in_minutes), not both.",
@@ -343,6 +344,40 @@ Tool(
             },
             "required": ["note"],
         },
+    ),
+    Tool(
+        name="todo_add",
+        description="Save a task or promise to your todo list (e.g. to reply to someone, congratulate on a birthday). "
+                    "Use for anything you need to remember to do later, even without a specific time.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The task text. e.g. 'congratulate Masha on her birthday on Aug 15' or 'reply to Dima about the project'.",
+                },
+            },
+            "required": ["content"],
+        },
+    ),
+    Tool(
+        name="todo_done",
+        description="Mark a todo item as completed by its number (see the <todo> list in your system prompt).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "1-based index of the todo item to mark done",
+                },
+            },
+            "required": ["index"],
+        },
+    ),
+    Tool(
+        name="todo_get",
+        description="List your current open todo items.",
+        parameters={"type": "object", "properties": {}},
     ),
 ]
 
@@ -440,6 +475,12 @@ async def execute_tool(tool_call: ToolCall, ctx: ToolContext) -> str:
             return await _tool_sleep(args, ctx)
         elif name == "set_reminder":
             return await _tool_set_reminder(args, ctx)
+        elif name == "todo_add":
+            return _tool_todo_add(args, ctx)
+        elif name == "todo_done":
+            return _tool_todo_done(args, ctx)
+        elif name == "todo_get":
+            return _tool_todo_get(args, ctx)
         elif name == "confirm_sleep":
             return await _tool_confirm_sleep(args, ctx)
         elif name == "set_alarm":
@@ -1044,6 +1085,8 @@ async def _tool_set_reminder(args: dict, ctx: ToolContext) -> str:
             return "Error: 'in_minutes' must be positive."
         fire_utc = datetime.now(timezone.utc) + timedelta(minutes=in_minutes)
         ctx.scheduler.add_reminder(fire_utc=fire_utc, note=note, chat_id=chat_id)
+        if ctx.todo_list:
+            ctx.todo_list.add(note)
         return (
             f"Reminder set: '{note}' in {in_minutes} minute(s). "
             f"Time: {fire_utc.strftime('%H:%M')} UTC."
@@ -1071,9 +1114,45 @@ async def _tool_set_reminder(args: dict, ctx: ToolContext) -> str:
     fire_utc = parsed - timedelta(hours=MSK_OFFSET)
 
     ctx.scheduler.add_reminder(fire_utc=fire_utc, note=note, chat_id=chat_id)
+    if ctx.todo_list:
+        ctx.todo_list.add(note)
     return (
         f"Reminder set: '{note}' at {parsed.strftime('%Y-%m-%d %H:%M')} MSK "
         f"({fire_utc.strftime('%H:%M')} UTC)."
+    )
+
+
+def _tool_todo_add(args: dict, ctx: ToolContext) -> str:
+    if not ctx.todo_list:
+        return "Todo list not available."
+
+    content = args.get("content", "").strip()
+    if not content:
+        return "Error: 'content' is required for todo_add."
+
+    ctx.todo_list.add(content)
+    open_todos = ctx.todo_list.get_open()
+    return f"Added to todo: {content}\nCurrent open todos ({len(open_todos)}):\n" + "\n".join(
+        f"{i}. {item}" for i, item in enumerate(open_todos, start=1)
+    )
+
+
+def _tool_todo_done(args: dict, ctx: ToolContext) -> str:
+    if not ctx.todo_list:
+        return "Todo list not available."
+
+    return ctx.todo_list.done(args["index"])
+
+
+def _tool_todo_get(args: dict, ctx: ToolContext) -> str:
+    if not ctx.todo_list:
+        return "Todo list not available."
+
+    open_todos = ctx.todo_list.get_open()
+    if not open_todos:
+        return "Todo list is empty. All tasks completed."
+    return "Open todos:\n" + "\n".join(
+        f"{i}. {item}" for i, item in enumerate(open_todos, start=1)
     )
 
 

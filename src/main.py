@@ -17,6 +17,7 @@ from src.memory.chat_history import ChatHistory
 from src.memory.contacts import Contacts
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
+from src.memory.todo import TodoList
 from src.memory.working_memory import WorkingMemory
 
 logging.basicConfig(
@@ -41,6 +42,7 @@ async def main() -> None:
     diary = Diary(config.memory.diary_dir)
     vector_store = VectorStore(config.memory.vectors_dir)
     working_memory = WorkingMemory(config.memory.working_memory_file)
+    todo_list = TodoList(config.memory.todo_file)
 
     # Contacts с статами отношений
     stat_names = [s.name for s in config.relationship_stats]
@@ -91,6 +93,7 @@ async def main() -> None:
         working_memory=working_memory,
         contacts=contacts,
         chat_history=chat_history,
+        todo_list=todo_list,
         personality=personality,
         notification_manager=notification_manager,
         sleep_manager=sleep_manager,

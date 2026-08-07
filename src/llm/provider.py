@@ -56,11 +56,22 @@ class LLMProvider:
         self._base_url = config.base_url
         self._model = config.model
         self._embedding_model = config.embedding_model
+        self._embedding_base_url = config.embedding_base_url
+        self._embedding_api_key = config.embedding_api_key
 
         self._client = AsyncOpenAI(
             api_key=self._api_key,
             base_url=self._base_url,
         )
+
+        # Отдельный клиент для эмбеддингов, если заданы свои endpoint/key.
+        # Иначе используем основной клиент (OpenAI-совместимый / DeepSeek и т.п.)
+        self._embed_client = self._client
+        if self._embedding_base_url:
+            self._embed_client = AsyncOpenAI(
+                api_key=self._embedding_api_key or self._api_key,
+                base_url=self._embedding_base_url,
+            )
 
         # LLM logger
         self._llm_logger = None
@@ -173,9 +184,10 @@ class LLMProvider:
         """Получить эмбеддинг для текста. Возвращает None если не поддерживается."""
         try:
             t0 = time.monotonic()
-            response = await self._client.embeddings.create(
+            response = await self._embed_client.embeddings.create(
                 model=self._embedding_model,
                 input=text,
+                encoding_format="float",
             )
             latency_ms = (time.monotonic() - t0) * 1000
 
@@ -191,9 +203,10 @@ class LLMProvider:
         """Получить эмбеддинги для списка текстов. Возвращает None если не поддерживается."""
         try:
             t0 = time.monotonic()
-            response = await self._client.embeddings.create(
+            response = await self._embed_client.embeddings.create(
                 model=self._embedding_model,
                 input=texts,
+                encoding_format="float",
             )
             latency_ms = (time.monotonic() - t0) * 1000
 

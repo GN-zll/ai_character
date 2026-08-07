@@ -40,11 +40,14 @@ class VectorStore:
     def add(self, text: str, embedding: list[float], metadata: dict | None = None) -> str:
         """Добавить запись в векторную БД."""
         entry_id = str(uuid.uuid4())
+        meta = metadata.copy() if metadata else {}
+        if not meta:
+            meta["_default"] = "1"
         self._collection.add(
             ids=[entry_id],
             embeddings=[embedding],
             documents=[text],
-            metadatas=[metadata or {}],
+            metadatas=[meta],
         )
         return entry_id
 

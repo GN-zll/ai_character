@@ -86,6 +86,7 @@ IMPORTANT:
         working_memory: str = "",
         diary_entries: str = "",
         contacts: str = "",
+        todo: str = "",
     ) -> str:
         """Собрать полный system prompt."""
         parts = [self._base_prompt]
@@ -100,6 +101,10 @@ IMPORTANT:
         # Адресная книга
         if contacts:
             parts.append(f"\n<contacts>\n{contacts}\n</contacts>")
+
+        # Todo list
+        if todo:
+            parts.append(f"\n{todo}")
 
         # Записи из дневника
         if diary_entries:
