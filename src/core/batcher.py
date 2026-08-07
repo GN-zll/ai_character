@@ -127,11 +127,11 @@ class MessageBatcher:
             return (
                 f"You have 1 unread message in chat {chat_id} ({sender}):\n"
                 f'"{preview}..."\n'
-                f"Use open_chat({chat_id}) to read all messages."
+                f"Use open_chat({chat_id}) to read and reply."
             )
         else:
             return (
                 f"You have {count} unread messages in chat {chat_id} ({sender}):\n"
                 f'Latest: "{preview}..."\n'
-                f"Use open_chat({chat_id}) to read all messages."
+                f"Use open_chat({chat_id}) to read and reply."
             )

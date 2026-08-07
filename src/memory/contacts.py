@@ -162,13 +162,5 @@ class Contacts:
                 line += f" — {c.description}"
             if c.tags:
                 line += f" [{', '.join(c.tags)}]"
-            # Показываем статы если есть ненулевые
-            stat_parts = []
-            for stat_name, value in c.stats.items():
-                if value != 0:
-                    label = self.get_stat_level(stat_name, value)
-                    stat_parts.append(f"{stat_name}={value:+d}({label})")
-            if stat_parts:
-                line += f" | {', '.join(stat_parts)}"
             lines.append(line)
         return "\n".join(lines)
