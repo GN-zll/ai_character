@@ -4,8 +4,8 @@
 Навигация:
   n / Enter  — следующая запись
   p          — предыдущая
-  N          — +10 записей
-  P          — -10 записей
+  N          — следующее начало цепочки (новая нотификация: сообщение, будильник и т.д.)
+  P          — предыдущее начало цепочки
   <num>G     — перейти к записи #num
   f <filter> — фильтр (f type:response, f reason:alarm, f clear)
   s          — сводка по текущему фильтру
@@ -84,6 +84,53 @@ def filter_entries(entries: list[dict], filt: str) -> list[dict]:
         elif key == "name" and val in e.get("name", "").lower():
             result.append(e)
     return result
+
+
+# Reasons that mark the START of a new interaction chain
+# (as opposed to continuation/internal steps within a chain)
+_CHAIN_START_REASONS = {
+    "incoming_message",
+    "alarm_wake_up",
+    "reminder",
+    "wait_checkin",
+    "proactive",
+    "mood_reflection",
+}
+
+# Reasons that are internal steps WITHIN a chain (continuations, dumps, sleep)
+_NON_CHAIN_START_REASONS = {
+    "continuation:tool_calls",
+    "diary_dump",
+    "working_memory_update",
+}
+
+
+def is_chain_start(entry: dict) -> bool:
+    """Начало ли entry новой цепочки (новая нотификация)."""
+    if entry.get("type") != "request":
+        return False
+    reason = entry.get("reason", "")
+    if not reason:
+        return False
+    if reason in _NON_CHAIN_START_REASONS or reason.startswith("sleep:"):
+        return False
+    return True
+
+
+def find_next_chain_start(entries: list[dict], pos: int) -> int:
+    """Найти позицию следующего начала цепочки (строго дальше pos)."""
+    for i in range(pos + 1, len(entries)):
+        if is_chain_start(entries[i]):
+            return i
+    return pos
+
+
+def find_prev_chain_start(entries: list[dict], pos: int) -> int:
+    """Найти позицию предыдущего начала цепочки (строго раньше pos)."""
+    for i in range(pos - 1, -1, -1):
+        if is_chain_start(entries[i]):
+            return i
+    return pos
 
 
 def format_header(entry: dict, pos: int, total: int, filt: str) -> Text:
@@ -328,7 +375,7 @@ def main() -> None:
 
         console.print()
         console.print(
-            "[dim]n/p: navigate │ N/P: ±10 │ <num>G: goto │ f: filter │ s: summary │ q: quit[/dim]",
+            "[dim]n/p: ±1 entry │ N/P: next/prev chain start │ <num>G: goto │ f: filter │ s: summary │ q: quit[/dim]",
             highlight=False,
         )
 
@@ -344,9 +391,9 @@ def main() -> None:
             if pos > 0:
                 pos -= 1
         elif cmd == "N":
-            pos = min(pos + 10, len(filtered) - 1)
+            pos = find_next_chain_start(filtered, pos)
         elif cmd == "P":
-            pos = max(pos - 10, 0)
+            pos = find_prev_chain_start(filtered, pos)
         elif cmd.endswith("G") and cmd[:-1].strip().isdigit():
             target = int(cmd[:-1].strip()) - 1
             if 0 <= target < len(filtered):
