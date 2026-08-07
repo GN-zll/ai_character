@@ -21,7 +21,6 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -181,8 +180,7 @@ def format_response(entry: dict) -> Panel:
             try:
                 parsed = json.loads(args)
                 formatted = json.dumps(parsed, ensure_ascii=False, indent=4)
-                syntax = Syntax(formatted, "json", theme="monokai", word_wrap=True)
-                parts.append(syntax.highlight(formatted))
+                parts.append(formatted)
             except (json.JSONDecodeError, TypeError):
                 parts.append(f"    {args[:200]}")
 
@@ -214,8 +212,7 @@ def format_tool_result(entry: dict) -> Panel:
     if args:
         parts.append("\n[bold]Arguments:[/bold]")
         formatted = json.dumps(args, ensure_ascii=False, indent=2)
-        syntax = Syntax(formatted, "json", theme="monokai", word_wrap=True)
-        parts.append(syntax.highlight(formatted))
+        parts.append(formatted)
     elif args_raw:
         parts.append(f"\n[bold]Arguments (raw):[/bold] {args_raw[:200]}")
 
