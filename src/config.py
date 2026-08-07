@@ -71,6 +71,7 @@ class BehaviorConfig:
     batch_delay_min: float = 0.0
     batch_delay_max: float = 5.0
     diary_token_trigger: int = 8000
+    chat_index_threshold: int = 100
     worker_max_iterations: int = 20
     typing_wpm_min: int = 100
     typing_wpm_max: int = 300

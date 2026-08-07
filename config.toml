@@ -63,6 +63,7 @@ proactive_chance = 0.5
 batch_delay_min = 0.0
 batch_delay_max = 5.0
 diary_token_trigger = 8000
+chat_index_threshold = 100
 worker_max_iterations = 20
 typing_wpm_min = 30           # мин символов в минуту (медленнее = человечнее)
 typing_wpm_max = 200           # макс символов в минуту

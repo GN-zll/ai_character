@@ -45,6 +45,7 @@ class ToolContext:
     sleep_manager: object = None  # SleepManager
     scheduler: object = None  # Scheduler
     todo_list: object = None  # TodoList
+    chat_indexer: object = None  # ChatIndexer
     mode: WorkerMode = WorkerMode.IDLE
     pending_send: dict | None = None  # {"chat_id", "text", "reply_to"}
 
@@ -104,8 +105,12 @@ _BASE_TOOLS: list[Tool] = [
     ),
     Tool(
         name="ask",
-        description="Search your diary/memory for related information about a topic. "
-                    "Optionally pass chat_id to search only entries about a specific person.",
+        description=(
+            "Search your memory or chat history for related information about a topic. "
+            "mode='memory' searches your diary (default). mode='chat' searches past "
+            "conversations from chat history. mode='all' searches both. "
+            "Optionally pass chat_id to search only one person's entries."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -113,9 +118,14 @@ _BASE_TOOLS: list[Tool] = [
                     "type": "string",
                     "description": "What to search for in your memory",
                 },
+                "mode": {
+                    "type": "string",
+                    "enum": ["memory", "chat", "all"],
+                    "description": "What to search: 'memory' (diary, default), 'chat' (chat history), 'all' (both)",
+                },
                 "chat_id": {
                     "type": "integer",
-                    "description": "Optional. Search only this person's diary entries.",
+                    "description": "Optional. Search only this person's entries.",
                 },
             },
             "required": ["query"],
@@ -811,6 +821,7 @@ async def _tool_diary_write(args: dict, ctx: ToolContext) -> str:
 
 async def _tool_ask(args: dict, ctx: ToolContext) -> str:
     query = args["query"]
+    mode = args.get("mode", "memory")
     chat_id = args.get("chat_id")
 
     if not ctx.llm:
@@ -821,20 +832,34 @@ async def _tool_ask(args: dict, ctx: ToolContext) -> str:
         if embedding is None:
             return "Search unavailable (embeddings not supported by this provider)."
 
-        # Если задан chat_id — ищем только записи об этом человеке
-        where_filter = None
-        if chat_id:
-            where_filter = {"$and": [{"type": "person"}, {"chat_id": chat_id}]}
+        results: list[str] = []
 
-        results = ctx.vector_store.query(embedding, n_results=5, max_distance=0.5, where=where_filter)
+        # Режим memory — ищем в дневнике
+        if mode in ("memory", "all"):
+            memory_where = None
+            if chat_id:
+                memory_where = {"$and": [{"type": "person"}, {"chat_id": chat_id}]}
+            memory_hits = ctx.vector_store.query(
+                embedding, n_results=5, max_distance=0.5, where=memory_where,
+            )
+            for r in memory_hits:
+                results.append(f"[memory] {r.text}")
+
+        # Режим chat — ищем в истории чата
+        if mode in ("chat", "all"):
+            chat_where = None
+            if chat_id:
+                chat_where = {"chat_id": chat_id}
+            chat_hits = ctx.vector_store.query_chat(
+                embedding, n_results=5, max_distance=0.5, where=chat_where,
+            )
+            for r in chat_hits:
+                results.append(f"[chat] {r.text}")
 
         if not results:
             return _no_memories_hint(query)
 
-        entries = []
-        for r in results:
-            entries.append(f"[{r.id}] (distance={r.distance:.3f}) {r.text}")
-        return "Found memories:\n" + "\n---\n".join(entries)
+        return "Found:\n" + "\n---\n".join(results)
     except Exception as e:
         return f"Search failed: {e}"
 
@@ -935,6 +960,8 @@ def _save_outgoing(ctx: ToolContext, chat_id: int, message_id: int, text: str) -
                 text=text,
                 is_outgoing=True,
             )
+            if ctx.chat_indexer:
+                asyncio.create_task(ctx.chat_indexer.on_message())
         except Exception:
             logger.exception("Failed to save outgoing message")
 

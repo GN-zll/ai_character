@@ -20,6 +20,8 @@ class ChatMessage:
     text: str
     timestamp: datetime
     is_outgoing: bool
+    chat_id: int = 0
+    row_id: int = 0  # автоинкремент из SQLite (для индексации)
 
 
 class ChatHistory:
@@ -90,6 +92,27 @@ class ChatHistory:
         except Exception:
             logger.exception("Failed to add message to history")
 
+    def get_messages_since(self, last_id: int, limit: int = 100) -> list[ChatMessage]:
+        """Сообщения с row_id > last_id, в хронологическом порядке (для индексации)."""
+        rows = self._conn.execute(
+            "SELECT id, chat_id, message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "FROM messages WHERE id > ? ORDER BY id ASC LIMIT ?",
+            (last_id, limit),
+        ).fetchall()
+        return [
+            ChatMessage(
+                row_id=row[0],
+                chat_id=row[1],
+                message_id=row[2],
+                sender_id=row[3],
+                sender_name=row[4],
+                text=row[5],
+                timestamp=datetime.fromtimestamp(row[6], tz=timezone.utc),
+                is_outgoing=bool(row[7]),
+            )
+            for row in rows
+        ]
+
     def get_last_read_message_id(self, chat_id: int) -> int:
         """Получить message_id последнего прочитанного сообщения (0 = ничего)."""
         row = self._conn.execute(
@@ -118,7 +141,7 @@ class ChatHistory:
         """Получить входящие сообщения, ещё не прочитанные (новее last_read)."""
         last_read = self.get_last_read_message_id(chat_id)
         rows = self._conn.execute(
-            "SELECT message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "SELECT id, message_id, sender_id, sender_name, text, timestamp, is_outgoing "
             "FROM messages WHERE chat_id = ? AND is_outgoing = 0 AND message_id > ? "
             "ORDER BY timestamp ASC LIMIT ?",
             (chat_id, last_read, limit),
@@ -127,19 +150,21 @@ class ChatHistory:
         messages = []
         for row in rows:
             messages.append(ChatMessage(
-                message_id=row[0],
-                sender_id=row[1],
-                sender_name=row[2],
-                text=row[3],
-                timestamp=datetime.fromtimestamp(row[4], tz=timezone.utc),
-                is_outgoing=bool(row[5]),
+                row_id=row[0],
+                chat_id=chat_id,
+                message_id=row[1],
+                sender_id=row[2],
+                sender_name=row[3],
+                text=row[4],
+                timestamp=datetime.fromtimestamp(row[5], tz=timezone.utc),
+                is_outgoing=bool(row[6]),
             ))
         return messages
 
     def get_messages(self, chat_id: int, limit: int = 20) -> list[ChatMessage]:
         """Получить последние N сообщений из чата."""
         rows = self._conn.execute(
-            "SELECT message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "SELECT id, message_id, sender_id, sender_name, text, timestamp, is_outgoing "
             "FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?",
             (chat_id, limit),
         ).fetchall()
@@ -147,31 +172,35 @@ class ChatHistory:
         messages = []
         for row in reversed(rows):
             messages.append(ChatMessage(
-                message_id=row[0],
-                sender_id=row[1],
-                sender_name=row[2],
-                text=row[3],
-                timestamp=datetime.fromtimestamp(row[4], tz=timezone.utc),
-                is_outgoing=bool(row[5]),
+                row_id=row[0],
+                chat_id=chat_id,
+                message_id=row[1],
+                sender_id=row[2],
+                sender_name=row[3],
+                text=row[4],
+                timestamp=datetime.fromtimestamp(row[5], tz=timezone.utc),
+                is_outgoing=bool(row[6]),
             ))
         return messages
 
     def get_message_by_id(self, chat_id: int, message_id: int) -> ChatMessage | None:
         """Получить конкретное сообщение по ID."""
         row = self._conn.execute(
-            "SELECT message_id, sender_id, sender_name, text, timestamp, is_outgoing "
+            "SELECT id, message_id, sender_id, sender_name, text, timestamp, is_outgoing "
             "FROM messages WHERE chat_id = ? AND message_id = ?",
             (chat_id, message_id),
         ).fetchone()
         if not row:
             return None
         return ChatMessage(
-            message_id=row[0],
-            sender_id=row[1],
-            sender_name=row[2],
-            text=row[3],
-            timestamp=datetime.fromtimestamp(row[4], tz=timezone.utc),
-            is_outgoing=bool(row[5]),
+            row_id=row[0],
+            chat_id=chat_id,
+            message_id=row[1],
+            sender_id=row[2],
+            sender_name=row[3],
+            text=row[4],
+            timestamp=datetime.fromtimestamp(row[5], tz=timezone.utc),
+            is_outgoing=bool(row[6]),
         )
 
     def get_last_activity(self, chat_id: int) -> datetime | None:

@@ -14,6 +14,7 @@ from src.core.sleep import SleepManager
 from src.core.worker import Worker
 from src.llm.provider import LLMProvider
 from src.memory.chat_history import ChatHistory
+from src.memory.chat_indexer import ChatIndexer
 from src.memory.contacts import Contacts
 from src.memory.diary import Diary
 from src.memory.rag import VectorStore
@@ -53,6 +54,12 @@ async def main() -> None:
     )
 
     chat_history = ChatHistory(config.memory.history_db, config.memory.history_max_per_chat)
+    chat_indexer = ChatIndexer(
+        chat_history=chat_history,
+        vector_store=vector_store,
+        llm=llm,
+        threshold=config.behavior.chat_index_threshold,
+    )
     personality = Personality(config.character)
     notification_manager = NotificationManager()
 
@@ -94,6 +101,7 @@ async def main() -> None:
         contacts=contacts,
         chat_history=chat_history,
         todo_list=todo_list,
+        chat_indexer=chat_indexer,
         personality=personality,
         notification_manager=notification_manager,
         sleep_manager=sleep_manager,
@@ -134,6 +142,7 @@ async def main() -> None:
                 text=msg.text,
                 is_outgoing=msg.is_outgoing,
             )
+            await chat_indexer.on_message()
 
         # Reply context: ищем оригинал сообщения
         if msg.reply_to and not msg.reply_to_text:

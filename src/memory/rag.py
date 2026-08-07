@@ -35,15 +35,42 @@ class VectorStore:
             name="diary",
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info("Vector store: %s (count=%s)", persist_dir, self._collection.count())
+        self._chat_collection = self._client.get_or_create_collection(
+            name="chat_history",
+            metadata={"hnsw:space": "cosine"},
+        )
+        logger.info(
+            "Vector store: %s (diary=%s, chat=%s)",
+            persist_dir,
+            self._collection.count(),
+            self._chat_collection.count(),
+        )
 
     def add(self, text: str, embedding: list[float], metadata: dict | None = None) -> str:
-        """Добавить запись в векторную БД."""
+        """Добавить запись в дневник (коллекция diary)."""
+        return self._add_to(self._collection, text, embedding, metadata)
+
+    def add_chat(
+        self,
+        text: str,
+        embedding: list[float],
+        metadata: dict | None = None,
+    ) -> str:
+        """Добавить сообщение в коллекцию chat_history."""
+        return self._add_to(self._chat_collection, text, embedding, metadata)
+
+    def _add_to(
+        self,
+        collection,
+        text: str,
+        embedding: list[float],
+        metadata: dict | None,
+    ) -> str:
         entry_id = str(uuid.uuid4())
         meta = metadata.copy() if metadata else {}
         if not meta:
             meta["_default"] = "1"
-        self._collection.add(
+        collection.add(
             ids=[entry_id],
             embeddings=[embedding],
             documents=[text],
@@ -60,8 +87,47 @@ class VectorStore:
         max_distance: float = 1.0,
         where: dict | None = None,
     ) -> list[SearchResult]:
-        """Поиск ближайших записей по эмбеддингу."""
-        if self._collection.count() == 0:
+        """Поиск по дневнику (коллекция diary)."""
+        return self._query(
+            self._collection,
+            embedding,
+            n_results,
+            min_distance=min_distance,
+            max_distance=max_distance,
+            where=where,
+        )
+
+    def query_chat(
+        self,
+        embedding: list[float],
+        n_results: int = 10,
+        *,
+        min_distance: float = 0.0,
+        max_distance: float = 1.0,
+        where: dict | None = None,
+    ) -> list[SearchResult]:
+        """Поиск по истории чата (коллекция chat_history)."""
+        return self._query(
+            self._chat_collection,
+            embedding,
+            n_results,
+            min_distance=min_distance,
+            max_distance=max_distance,
+            where=where,
+        )
+
+    def _query(
+        self,
+        collection,
+        embedding: list[float],
+        n_results: int,
+        *,
+        min_distance: float,
+        max_distance: float,
+        where: dict | None,
+    ) -> list[SearchResult]:
+        """Внутренний поиск по конкретной коллекции."""
+        if collection.count() == 0:
             return []
 
         kwargs: dict = {
@@ -69,17 +135,17 @@ class VectorStore:
             "include": ["documents", "distances", "metadatas"],
         }
         if where:
-            n = min(n_results, len(self._collection.get(where=where)["ids"]))
+            n = min(n_results, len(collection.get(where=where)["ids"]))
             kwargs["n_results"] = n
             kwargs["where"] = where
         else:
-            n = min(n_results, self._collection.count())
+            n = min(n_results, collection.count())
             kwargs["n_results"] = n
 
         if n == 0:
             return []
 
-        results = self._collection.query(**kwargs)
+        results = collection.query(**kwargs)
 
         items = []
         for i in range(len(results["ids"][0])):
@@ -99,5 +165,9 @@ class VectorStore:
         self._collection.delete(ids=[entry_id])
 
     def count(self) -> int:
-        """Количество записей."""
+        """Количество записей в дневнике."""
         return self._collection.count()
+
+    def count_chat(self) -> int:
+        """Количество записей в истории чата."""
+        return self._chat_collection.count()

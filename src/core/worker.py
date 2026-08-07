@@ -41,6 +41,7 @@ class Worker:
         contacts: Contacts,
         chat_history: ChatHistory,
         todo_list: TodoList | None = None,
+        chat_indexer: object = None,  # ChatIndexer
         personality: Personality = None,
         notification_manager: NotificationManager,
         sleep_manager: SleepManager | None = None,
@@ -59,6 +60,7 @@ class Worker:
         self._todo_list = todo_list or TodoList(
             self._config.memory.todo_file if self._config else "data/todo.md"
         )
+        self._chat_indexer = chat_indexer
         self._personality = personality
         self._notification_manager = notification_manager
         self._sleep_manager = sleep_manager
@@ -193,6 +195,7 @@ class Worker:
             sleep_manager=self._sleep_manager,
             scheduler=self._scheduler,
             todo_list=self._todo_list,
+            chat_indexer=self._chat_indexer,
             mode=self._mode,
         )
 
