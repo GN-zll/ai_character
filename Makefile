@@ -19,7 +19,7 @@ logs:
 
 update:
 	git pull origin main
-	.venv/bin/pip install -e .
+	.venv/bin/pip install -e . --upgrade
 	sudo systemctl restart ai-character
 
 restart:
